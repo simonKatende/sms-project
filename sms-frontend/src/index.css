@@ -1,1 +1,18 @@
 @import "tailwindcss";
+
+@theme {
+  /* Brand palette */
+  --color-primary: #2471A3;
+  --color-navy:    #1A3C5E;
+  --color-success: #148F77;
+  --color-warning: #F39C12;
+  --color-danger:  #C0392B;
+  --color-surface: #F4F6F9;
+
+  /* Typography */
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body { font-family: var(--font-sans); background-color: #F4F6F9; color: #1A1A2E; }

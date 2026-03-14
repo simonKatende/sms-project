@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "test": "jest --runInBand",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:generate": "prisma generate",
@@ -25,9 +25,11 @@
     "axios": "^1.13.6",
     "bcrypt": "^6.0.0",
     "comms-sdk": "^1.0.2",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.3.1",
     "express-validator": "^7.3.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
@@ -38,7 +40,8 @@
     "prisma": "^7.5.0",
     "puppeteer": "^24.39.1",
     "sharp": "^0.34.5",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",

@@ -282,6 +282,79 @@ async function seedAdminUser() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 6. ACADEMIC YEAR, CLASSES & STREAMS
+// ─────────────────────────────────────────────────────────────────────────────
+async function seedAcademicStructure() {
+  // ── Academic year ───────────────────────────────────────────
+  const year = await prisma.academicYear.upsert({
+    where:  { yearLabel: '2026' },
+    update: { isCurrent: true },
+    create: {
+      yearLabel: '2026',
+      startDate: new Date('2026-02-01'),
+      endDate:   new Date('2026-11-30'),
+      isCurrent: true,
+    },
+  });
+
+  // ── School sections (already seeded, just fetch IDs) ────────
+  const lower = await prisma.schoolSection.findUniqueOrThrow({ where: { code: 'LOWER' } });
+  const upper = await prisma.schoolSection.findUniqueOrThrow({ where: { code: 'UPPER' } });
+
+  // ── Classes ─────────────────────────────────────────────────
+  const classDefs = [
+    { name: 'Nursery', levelOrder: 0, sectionId: lower.id },
+    { name: 'P.1',     levelOrder: 1, sectionId: lower.id },
+    { name: 'P.2',     levelOrder: 2, sectionId: lower.id },
+    { name: 'P.3',     levelOrder: 3, sectionId: lower.id },
+    { name: 'P.4',     levelOrder: 4, sectionId: upper.id },
+    { name: 'P.5',     levelOrder: 5, sectionId: upper.id },
+    { name: 'P.6',     levelOrder: 6, sectionId: upper.id },
+    { name: 'P.7',     levelOrder: 7, sectionId: upper.id },
+  ];
+
+  const classes: Record<string, string> = {};
+  for (const def of classDefs) {
+    // Unique by name within a school section
+    const existing = await prisma.class.findFirst({
+      where: { name: def.name, schoolSectionId: def.sectionId },
+    });
+    const cls = existing ?? await prisma.class.create({
+      data: { name: def.name, levelOrder: def.levelOrder, schoolSectionId: def.sectionId },
+    });
+    classes[def.name] = cls.id;
+  }
+
+  // ── Streams (one default stream per class for the current year) ─
+  const streamDefs = [
+    { className: 'Nursery', name: 'Nursery' },
+    { className: 'P.1',     name: 'P.1A' },
+    { className: 'P.2',     name: 'P.2A' },
+    { className: 'P.3',     name: 'P.3A' },
+    { className: 'P.4',     name: 'P.4A' },
+    { className: 'P.5',     name: 'P.5A' },
+    { className: 'P.6',     name: 'P.6A' },
+    { className: 'P.7',     name: 'P.7A' },
+  ];
+
+  for (const def of streamDefs) {
+    const classId = classes[def.className];
+    const existing = await prisma.stream.findFirst({
+      where: { classId, academicYearId: year.id, name: def.name },
+    });
+    if (!existing) {
+      await prisma.stream.create({
+        data: { classId, name: def.name, academicYearId: year.id },
+      });
+    }
+  }
+
+  console.log('✓  Academic year 2026 seeded (current)');
+  console.log('✓  8 classes seeded (Nursery + P.1–P.7)');
+  console.log('✓  8 default streams seeded (one per class)');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN
 // ─────────────────────────────────────────────────────────────────────────────
 async function main() {
@@ -296,6 +369,7 @@ async function main() {
   await seedAssessmentTypes();
   await seedReportCardSettings();
   await seedAdminUser();
+  await seedAcademicStructure();
 
   console.log('─────────────────────────────────────────────────────');
   console.log('  Seed complete.\n');

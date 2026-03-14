@@ -7,6 +7,10 @@
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
+import authRoutes  from './routes/authRoutes.js';
+import pupilRoutes from './routes/pupilRoutes.js';
+import { classRouter, streamRouter, schoolSectionRouter, academicYearRouter }
+  from './routes/classStreamRoutes.js';
 
 const app = express();
 
@@ -15,6 +19,14 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*', credentials: true }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+
+// ── API routes ────────────────────────────────────────────────
+app.use('/api/v1/auth',           authRoutes);
+app.use('/api/v1/pupils',         pupilRoutes);
+app.use('/api/v1/classes',        classRouter);
+app.use('/api/v1/streams',        streamRouter);
+app.use('/api/v1/school-sections', schoolSectionRouter);
+app.use('/api/v1/academic-years', academicYearRouter);
 
 // ── Health check ─────────────────────────────────────────────
 app.get('/health', (_req, res) => {

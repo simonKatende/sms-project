@@ -60,7 +60,7 @@ storage/       → Generated files (photos, PDFs) — gitignored
 - Class teachers can only enter scores
 - Report card matches school sample format: BOT/MOT/EOT columns, teacher initials per subject,
   grade guide at bottom, school requirements, next term dates (Day and Boarding separate)
-- Student photo top-right, SchoolPay code shown on card
+- Pupil photo top-right, SchoolPay code shown on card
 
 ## Database Key Rules
 - All PKs are UUID
@@ -77,6 +77,81 @@ storage/       → Generated files (photos, PDFs) — gitignored
 - DB column: egoSmsMessageId (not atMessageId)
 - Phone numbers must be normalised to +256XXXXXXXXX before sending
 
+---
+
+## Working Rules — Follow These on Every Task
+
+### 1. Testing — MANDATORY after every service
+After building ANY service file (e.g. PupilService.js, GradingEngineService.js, FeesService.js):
+- ALWAYS write a Jest unit test file immediately after, without being asked
+- Test file location: sms-backend/tests/unit/[ServiceName].test.js
+- Mock all Prisma database calls using jest.mock()
+- Mock all external adapters (EgoSMSAdapter, SchoolPayAdapter, PuppeteerPDFAdapter)
+- Every test file MUST cover:
+  a. Happy path (normal successful operation)
+  b. Validation errors (invalid inputs)
+  c. Edge cases specific to that service (e.g. F9 penalty, bursary recalculation, null scores)
+  d. Error handling (what happens when DB or external service fails)
+- After writing the test file, run it: npx jest tests/unit/[ServiceName].test.js
+- All tests must pass before moving on. Fix failures before proceeding.
+
+### 2. Testing — After every API controller
+After building ANY controller + route:
+- Write an integration test: sms-backend/tests/integration/[resource].test.js
+- Use supertest to make HTTP requests against the Express app
+- Test: 200/201 success, 400 validation error, 401 unauthenticated, 403 wrong role, 404 not found
+- Run: npx jest tests/integration/[resource].test.js
+
+### 3. Code quality — apply to every file
+- Use async/await throughout — no .then() chains
+- Always wrap async operations in try/catch and pass errors to next(err)
+- Never expose stack traces in error responses — use { error: { message, code } } format
+- Add JSDoc comments to every service method explaining what it does, params, and return value
+- Use meaningful variable names — no single letters except loop counters
+
+---
+
+## File Naming Conventions
+- Services: PascalCase — e.g. PupilService.js, GradingEngineService.js
+- Controllers: PascalCase — e.g. PupilController.js
+- Routes: camelCase — e.g. pupilRoutes.js
+- Tests: match the file they test — e.g. PupilService.test.js
+- Integrations/Adapters: PascalCase — e.g. EgoSMSAdapter.js
+
+## Test File Structure Template
+Every unit test file must follow this structure:
+
+```javascript
+// tests/unit/ExampleService.test.js
+const ExampleService = require('../../src/services/ExampleService');
+
+// Mock Prisma
+jest.mock('../../src/utils/prisma', () => ({
+  modelName: {
+    findUnique: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    findMany: jest.fn(),
+  },
+}));
+
+describe('ExampleService', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('methodName', () => {
+    it('should [expected behaviour] when [condition]', async () => {
+      // Arrange
+      // Act
+      // Assert
+    });
+  });
+});
+```
+
+---
+
 ## Sprint Plan (16 weeks total)
 - Sprint 0 (Weeks 1-2): Environment setup, Prisma schema, seed data
 - Sprint 1 (Weeks 3-4): Auth + Pupil management
@@ -88,11 +163,11 @@ storage/       → Generated files (photos, PDFs) — gitignored
 - Sprint 7 (Weeks 15-16): Go-live + Parallel running
 - Future: WhatsApp integration (no schema/UI changes needed — adapter only)
 
-## Before doing any work, read these documents to get detailed context:
+## Reference Documents (read when needed for detailed context)
 - /docs/SMS_Requirements_Analysis_v1.2.md
 - /docs/SMS_System_Architecture_v1.1.md
 - /docs/SMS_Database_Design.md
 - /docs/SMS_Architecture_Amendment_AAN001.md
 
 ## Current Sprint
-Sprint 0 — Environment Setup
+Sprint 1 — Authentication & Pupil Management

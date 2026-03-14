@@ -11,6 +11,9 @@
 import 'dotenv/config';
 import { register } from 'tsx/esm/api';
 
+process.on('uncaughtException',  (err) => { console.error('[FATAL] Uncaught exception:',  err); process.exit(1); });
+process.on('unhandledRejection', (err) => { console.error('[FATAL] Unhandled rejection:', err); process.exit(1); });
+
 // Register tsx so subsequent dynamic imports can resolve .ts files.
 // Prisma v7 generates a TypeScript-native client — this avoids a build step.
 register();
@@ -25,8 +28,13 @@ await prisma.$connect();
 // ── Start HTTP server ─────────────────────────────────────────
 const PORT = Number(process.env.PORT) || 3000;
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`SMS Server running on port ${PORT}`);
+});
+
+server.on('error', (err) => {
+  console.error('[Server] Failed to bind port:', err.message);
+  process.exit(1);
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────
