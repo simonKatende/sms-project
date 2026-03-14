@@ -1,0 +1,985 @@
+// =============================================================
+// School Management System — Prisma Schema
+// DB Design v1.1 | Architecture Amendment AAN-001
+// PostgreSQL 15 | Prisma v7
+// =============================================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =============================================================
+// GROUP A — USERS & ACCESS
+// =============================================================
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(80)
+  displayName String   @db.VarChar(120)
+  description String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
+
+  users     User[]
+  userRoles UserRole[]
+
+  @@map("roles")
+}
+
+model User {
+  id                 String    @id @default(uuid()) @db.Uuid
+  fullName           String    @db.VarChar(150)
+  username           String    @unique @db.VarChar(100)
+  email              String?   @unique @db.VarChar(200)
+  passwordHash       String    @db.VarChar(255)
+  roleId             String    @db.Uuid
+  isActive           Boolean   @default(true)
+  lastLoginAt        DateTime? @db.Timestamptz(6)
+  mustChangePassword Boolean   @default(false)
+  deletedAt          DateTime? @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @db.Timestamptz(6)
+
+  role Role @relation(fields: [roleId], references: [id])
+
+  // Back-references (single FK per model, no naming needed except PupilScore)
+  sessions                     Session[]
+  auditLogs                    AuditLog[]
+  academicYearsCreated         AcademicYear[]
+  streamsAsTeacher             Stream[]
+  classSubjectAssignments      ClassSubjectAssignment[]
+  gradingScalesCreated         GradingScale[]
+  assessmentTypeConfigsCreated AssessmentTypeConfig[]
+  pupilsCreated                Pupil[]
+  pupilPhotosUploaded          PupilPhoto[]
+  feeStructuresCreated         FeeStructure[]
+  bursarySchemesCreated        BursaryScheme[]
+  pupilBursariesAwarded        PupilBursary[]
+  pupilBillsGenerated          PupilBill[]
+  paymentsRecorded             Payment[]
+  paymentPlansCreated          PaymentPlan[]
+  feeStatementsGenerated       FeeStatement[]
+  feeStructureAdjustments      FeeStructureAdjustment[]
+  // Two separate relations from PupilScore — must be named
+  pupilScoresEntered           PupilScore[]             @relation("PupilScoreEnteredBy")
+  pupilScoresLastEdited        PupilScore[]             @relation("PupilScoreLastEditedBy")
+  pupilTermResultsComputed     PupilTermResult[]
+  reportCardSettingsUpdated    ReportCardSetting[]
+  reportCardsGenerated         ReportCard[]
+  termRequirementsCreated      TermRequirement[]
+  communicationLogsInitiated   CommunicationLog[]
+  messageTemplatesCreated      MessageTemplate[]
+  demandNotesGenerated         DemandNote[]
+  systemSettingsUpdated        SystemSetting[]
+
+  @@map("users")
+}
+
+/// Supplementary role-permission mapping for fine-grained RBAC
+model UserRole {
+  id         String   @id @default(uuid()) @db.Uuid
+  roleId     String   @db.Uuid
+  permission String   @db.VarChar(120)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(6)
+
+  role Role @relation(fields: [roleId], references: [id])
+
+  @@map("user_roles")
+}
+
+/// Active authenticated sessions tracked via hashed refresh tokens
+model Session {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @db.Uuid
+  refreshTokenHash String    @unique @db.VarChar(255)
+  ipAddress        String?   @db.VarChar(45)
+  userAgent        String?
+  expiresAt        DateTime  @db.Timestamptz(6)
+  revokedAt        DateTime? @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([refreshTokenHash])
+  @@index([userId, revokedAt])
+  @@map("sessions")
+}
+
+/// Append-only audit trail — never updated or deleted
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @db.Uuid
+  action     String   @db.VarChar(120)
+  entityType String   @db.VarChar(80)
+  entityId   String?  @db.Uuid
+  oldValue   Json?
+  newValue   Json?
+  ipAddress  String?  @db.VarChar(45)
+  notes      String?
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([createdAt(sort: Desc)])
+  @@map("audit_logs")
+}
+
+// =============================================================
+// GROUP B — SCHOOL CONFIGURATION
+// =============================================================
+
+/// Single-row table holding school identity and system-wide settings
+model SchoolSetting {
+  id                String   @id @default(uuid()) @db.Uuid
+  schoolName        String   @db.VarChar(200)
+  schoolMotto       String?  @db.VarChar(200)
+  addressLine1      String?  @db.VarChar(200)
+  addressLine2      String?  @db.VarChar(200)
+  phonePrimary      String?  @db.VarChar(30)
+  phoneSecondary    String?  @db.VarChar(30)
+  email             String?  @db.VarChar(200)
+  logoPath          String?  @db.VarChar(500)
+  stampNotice       String?
+  reportFooterMotto String?  @db.VarChar(200)
+  gradeGuideText    String?
+  createdAt         DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @db.Timestamptz(6)
+
+  @@map("school_settings")
+}
+
+model AcademicYear {
+  id          String   @id @default(uuid()) @db.Uuid
+  yearLabel   String   @unique @db.VarChar(20)
+  startDate   DateTime @db.Date
+  endDate     DateTime @db.Date
+  isCurrent   Boolean  @default(false)
+  createdById String?  @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
+
+  createdBy User? @relation(fields: [createdById], references: [id])
+
+  terms   Term[]
+  streams Stream[]
+
+  @@map("academic_years")
+}
+
+model Term {
+  id                    String    @id @default(uuid()) @db.Uuid
+  academicYearId        String    @db.Uuid
+  termNumber            Int       @db.SmallInt
+  termLabel             String    @db.VarChar(40)
+  startDate             DateTime  @db.Date
+  endDate               DateTime  @db.Date
+  nextTermStartDay      DateTime? @db.Date
+  nextTermStartBoarding DateTime? @db.Date
+  isCurrent             Boolean   @default(false)
+  feesDueDate           DateTime? @db.Date
+  createdAt             DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @db.Timestamptz(6)
+
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  classSubjectAssignments ClassSubjectAssignment[]
+  feeStructures           FeeStructure[]
+  pupilBills              PupilBill[]
+  feeStatements           FeeStatement[]
+  assessmentPeriods       AssessmentPeriod[]
+  termRequirements        TermRequirement[]
+  pupilTermResults        PupilTermResult[]
+  reportCards             ReportCard[]
+  feeStructureAdjustments FeeStructureAdjustment[]
+
+  @@map("terms")
+}
+
+/// Upper Primary (P.4–P.7, ranked by aggregate) vs Lower Primary (P.1–P.3, ranked by average)
+model SchoolSection {
+  id                 String   @id @default(uuid()) @db.Uuid
+  name               String   @unique @db.VarChar(80)
+  code               String   @unique @db.VarChar(20)
+  rankingMethod      String   @default("aggregate") @db.VarChar(20)
+  classesDescription String?  @db.VarChar(100)
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @db.Timestamptz(6)
+
+  classes             Class[]
+  subjectSectionRules SubjectSectionRule[]
+
+  @@map("school_sections")
+}
+
+model Class {
+  id              String   @id @default(uuid()) @db.Uuid
+  schoolSectionId String   @db.Uuid
+  name            String   @db.VarChar(40)
+  levelOrder      Int      @db.SmallInt
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(6)
+
+  schoolSection SchoolSection @relation(fields: [schoolSectionId], references: [id])
+
+  streams                 Stream[]
+  classSubjectAssignments ClassSubjectAssignment[]
+  feeStructures           FeeStructure[]
+  termRequirements        TermRequirement[]
+  feeStructureAdjustments FeeStructureAdjustment[]
+
+  @@map("classes")
+}
+
+/// Streams re-configured each academic year; one class teacher per stream per year
+model Stream {
+  id             String   @id @default(uuid()) @db.Uuid
+  classId        String   @db.Uuid
+  name           String   @db.VarChar(60)
+  academicYearId String   @db.Uuid
+  classTeacherId String?  @db.Uuid
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(6)
+
+  class        Class        @relation(fields: [classId], references: [id])
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  classTeacher User?        @relation(fields: [classTeacherId], references: [id])
+
+  pupils Pupil[]
+
+  @@map("streams")
+}
+
+// =============================================================
+// GROUP C — SUBJECTS & GRADING
+// =============================================================
+
+model Subject {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique @db.VarChar(120)
+  code      String   @unique @db.VarChar(20)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  classSubjectAssignments ClassSubjectAssignment[]
+  subjectSectionRules     SubjectSectionRule[]
+  pupilScores             PupilScore[]
+
+  @@map("subjects")
+}
+
+/// Defines exactly which subjects a class takes per term — replaces all hardcoded subject lists
+model ClassSubjectAssignment {
+  id           String   @id @default(uuid()) @db.Uuid
+  classId      String   @db.Uuid
+  subjectId    String   @db.Uuid
+  termId       String   @db.Uuid
+  displayOrder Int      @default(1) @db.SmallInt
+  maxScore     Int      @default(100) @db.SmallInt
+  createdById  String?  @db.Uuid
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(6)
+
+  class     Class   @relation(fields: [classId], references: [id])
+  subject   Subject @relation(fields: [subjectId], references: [id])
+  term      Term    @relation(fields: [termId], references: [id])
+  createdBy User?   @relation(fields: [createdById], references: [id])
+
+  @@unique([classId, subjectId, termId])
+  @@map("class_subject_assignments")
+}
+
+/// Per-section aggregate inclusion rules + F9 penalty trigger flags per subject
+model SubjectSectionRule {
+  id                 String   @id @default(uuid()) @db.Uuid
+  schoolSectionId    String   @db.Uuid
+  subjectId          String   @db.Uuid
+  includeInAggregate Boolean  @default(true)
+  isPenaltyTrigger   Boolean  @default(false)
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @db.Timestamptz(6)
+
+  schoolSection SchoolSection @relation(fields: [schoolSectionId], references: [id])
+  subject       Subject       @relation(fields: [subjectId], references: [id])
+
+  @@unique([schoolSectionId, subjectId])
+  @@map("subject_section_rules")
+}
+
+/// Admin-defined grading scale; only one active at a time — grading engine reads active scale
+model GradingScale {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(100)
+  isActive    Boolean  @default(false)
+  description String?
+  createdById String?  @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
+
+  createdBy User? @relation(fields: [createdById], references: [id])
+
+  gradingScaleEntries GradingScaleEntry[]
+  divisionBoundaries  DivisionBoundary[]
+
+  @@index([isActive])
+  @@map("grading_scales")
+}
+
+/// Individual grade bands — D1 (90-100, 1pt) through F9 (0-29, 9pt)
+model GradingScaleEntry {
+  id             String   @id @default(uuid()) @db.Uuid
+  gradingScaleId String   @db.Uuid
+  gradeLabel     String   @db.VarChar(10)
+  pointsValue    Int      @db.SmallInt
+  minScore       Int      @db.SmallInt
+  maxScore       Int      @db.SmallInt
+  displayOrder   Int      @db.SmallInt
+  isFail         Boolean  @default(false)
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(6)
+
+  gradingScale GradingScale @relation(fields: [gradingScaleId], references: [id], onDelete: Cascade)
+
+  @@unique([gradingScaleId, gradeLabel])
+  @@unique([gradingScaleId, pointsValue])
+  @@map("grading_scale_entries")
+}
+
+/// Division aggregate point ranges: Div I (4-12) … U (35-36)
+model DivisionBoundary {
+  id             String   @id @default(uuid()) @db.Uuid
+  gradingScaleId String   @db.Uuid
+  divisionLabel  String   @db.VarChar(20)
+  romanNumeral   String   @db.VarChar(10)
+  minAggregate   Int      @db.SmallInt
+  maxAggregate   Int      @db.SmallInt
+  isUngraded     Boolean  @default(false)
+  displayOrder   Int      @db.SmallInt
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(6)
+
+  gradingScale GradingScale @relation(fields: [gradingScaleId], references: [id], onDelete: Cascade)
+
+  @@map("division_boundaries")
+}
+
+/// BOT/MOT/EOT seeded as system defaults; additional types (PLE Mock) added at runtime
+model AssessmentTypeConfig {
+  id                     String   @id @default(uuid()) @db.Uuid
+  code                   String   @unique @db.VarChar(30)
+  label                  String   @db.VarChar(80)
+  appearsOnReportCard    Boolean  @default(true)
+  contributesToAggregate Boolean  @default(false)
+  displayOrder           Int      @db.SmallInt
+  isSystemDefault        Boolean  @default(false)
+  isActive               Boolean  @default(true)
+  createdById            String?  @db.Uuid
+  createdAt              DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime @updatedAt @db.Timestamptz(6)
+
+  createdBy User? @relation(fields: [createdById], references: [id])
+
+  assessmentPeriods AssessmentPeriod[]
+
+  @@map("assessment_type_configs")
+}
+
+// =============================================================
+// GROUP D — PUPILS & FAMILIES
+// =============================================================
+
+/// Central pupil registry — the most critical table in the schema
+model Pupil {
+  id                String    @id @default(uuid()) @db.Uuid
+  pupilIdCode       String    @unique @db.VarChar(30)
+  lin               String?   @unique @db.VarChar(50)
+  schoolpayCode     String?   @unique @db.VarChar(50)
+  firstName         String    @db.VarChar(80)
+  lastName          String    @db.VarChar(80)
+  otherNames        String?   @db.VarChar(80)
+  dateOfBirth       DateTime  @db.Date
+  gender            String    @db.VarChar(10)
+  religion          String?   @db.VarChar(60)
+  house             String?   @db.VarChar(60)
+  medicalConditions String?
+  formerSchool      String?   @db.VarChar(200)
+  streamId          String?   @db.Uuid
+  section           String    @db.VarChar(20)
+  enrolmentDate     DateTime  @db.Date
+  isActive          Boolean   @default(true)
+  deletedAt         DateTime? @db.Timestamptz(6)
+  createdById       String?   @db.Uuid
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @db.Timestamptz(6)
+
+  stream    Stream? @relation(fields: [streamId], references: [id])
+  createdBy User?   @relation(fields: [createdById], references: [id])
+
+  pupilGuardians    PupilGuardian[]
+  pupilPhoto        PupilPhoto?
+  pupilBursaries    PupilBursary[]
+  pupilBills        PupilBill[]
+  feeStatements     FeeStatement[]
+  pupilScores       PupilScore[]
+  pupilTermResults  PupilTermResult[]
+  reportCards       ReportCard[]
+  communicationLogs CommunicationLog[]
+  demandNotes       DemandNote[]
+
+  @@index([pupilIdCode])
+  @@index([lin])
+  @@index([schoolpayCode])
+  @@index([streamId])
+  @@index([isActive, deletedAt])
+  @@map("pupils")
+}
+
+/// One guardian can be linked to multiple siblings via PupilGuardian
+model Guardian {
+  id              String    @id @default(uuid()) @db.Uuid
+  fullName        String    @db.VarChar(150)
+  relationship    String    @db.VarChar(60)
+  phoneCall       String    @db.VarChar(30)
+  phoneWhatsapp   String?   @db.VarChar(30)
+  email           String?   @db.VarChar(200)
+  physicalAddress String?
+  occupation      String?   @db.VarChar(100)
+  isActive        Boolean   @default(true)
+  deletedAt       DateTime? @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(6)
+
+  pupilGuardians    PupilGuardian[]
+  communicationLogs CommunicationLog[]
+
+  @@map("guardians")
+}
+
+/// Junction: pupil ↔ guardian; one guardian is flagged as primary contact
+model PupilGuardian {
+  id               String   @id @default(uuid()) @db.Uuid
+  pupilId          String   @db.Uuid
+  guardianId       String   @db.Uuid
+  isPrimaryContact Boolean  @default(false)
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @db.Timestamptz(6)
+
+  pupil    Pupil    @relation(fields: [pupilId], references: [id], onDelete: Cascade)
+  guardian Guardian @relation(fields: [guardianId], references: [id], onDelete: Cascade)
+
+  @@unique([pupilId, guardianId])
+  @@map("pupil_guardians")
+}
+
+/// Passport photo — separated to keep pupils table lightweight
+model PupilPhoto {
+  id            String   @id @default(uuid()) @db.Uuid
+  pupilId       String   @unique @db.Uuid
+  filePath      String   @db.VarChar(500)
+  fileSizeBytes Int?
+  uploadedById  String?  @db.Uuid
+  uploadedAt    DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(6)
+
+  pupil      Pupil @relation(fields: [pupilId], references: [id], onDelete: Cascade)
+  uploadedBy User? @relation(fields: [uploadedById], references: [id])
+
+  @@map("pupil_photos")
+}
+
+// =============================================================
+// GROUP E — FEES
+// =============================================================
+
+model FeeCategory {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique @db.VarChar(120)
+  code      String   @unique @db.VarChar(30)
+  isTuition Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  feeStructures           FeeStructure[]
+  bursarySchemes          BursaryScheme[]
+  billLineItems           BillLineItem[]
+  feeStructureAdjustments FeeStructureAdjustment[]
+
+  @@map("fee_categories")
+}
+
+/// Published fee schedule — one row per category × class × section × term
+model FeeStructure {
+  id            String   @id @default(uuid()) @db.Uuid
+  feeCategoryId String   @db.Uuid
+  classId       String   @db.Uuid
+  section       String   @db.VarChar(20)
+  termId        String   @db.Uuid
+  amount        Int
+  isMandatory   Boolean  @default(true)
+  createdById   String?  @db.Uuid
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(6)
+
+  feeCategory FeeCategory @relation(fields: [feeCategoryId], references: [id])
+  class       Class       @relation(fields: [classId], references: [id])
+  term        Term        @relation(fields: [termId], references: [id])
+  createdBy   User?       @relation(fields: [createdById], references: [id])
+
+  @@unique([feeCategoryId, classId, section, termId])
+  @@map("fee_structures")
+}
+
+/// v1.1: Scheme is a named label only — discount amount is set per pupil in PupilBursary
+model BursaryScheme {
+  id                  String   @id @default(uuid()) @db.Uuid
+  name                String   @unique @db.VarChar(150)
+  description         String?
+  appliesToCategoryId String?  @db.Uuid
+  isActive            Boolean  @default(true)
+  createdById         String?  @db.Uuid
+  createdAt           DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime @updatedAt @db.Timestamptz(6)
+
+  appliesToCategory FeeCategory? @relation(fields: [appliesToCategoryId], references: [id])
+  createdBy         User?        @relation(fields: [createdById], references: [id])
+
+  pupilBursaries PupilBursary[]
+
+  @@map("bursary_schemes")
+}
+
+/// v1.1: agreedNetFeesUgx is the commercial anchor — preserved during fee structure changes
+model PupilBursary {
+  id                  String    @id @default(uuid()) @db.Uuid
+  pupilId             String    @db.Uuid
+  bursarySchemeId     String    @db.Uuid
+  standardFeesAtAward Int
+  discountUgx         Int
+  agreedNetFeesUgx    Int
+  sectionAtAward      String    @db.VarChar(20)
+  awardedDate         DateTime  @db.Date
+  expiryDate          DateTime? @db.Date
+  lastRecalculatedAt  DateTime? @db.Timestamptz(6)
+  recalculationNotes  String?
+  notes               String?
+  awardedById         String?   @db.Uuid
+  isActive            Boolean   @default(true)
+  createdAt           DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime  @updatedAt @db.Timestamptz(6)
+
+  pupil         Pupil         @relation(fields: [pupilId], references: [id])
+  bursaryScheme BursaryScheme @relation(fields: [bursarySchemeId], references: [id])
+  awardedBy     User?         @relation(fields: [awardedById], references: [id])
+
+  @@map("pupil_bursaries")
+}
+
+/// Top-level bill per pupil per term — one bill per pupil per term enforced
+model PupilBill {
+  id                  String   @id @default(uuid()) @db.Uuid
+  pupilId             String   @db.Uuid
+  termId              String   @db.Uuid
+  totalAmount         Int
+  totalPaid           Int      @default(0)
+  balance             Int
+  arrearsFromPrevious Int      @default(0)
+  billingStatus       String   @default("pending") @db.VarChar(20)
+  generatedById       String?  @db.Uuid
+  generatedAt         DateTime @default(now()) @db.Timestamptz(6)
+  createdAt           DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime @updatedAt @db.Timestamptz(6)
+
+  pupil       Pupil @relation(fields: [pupilId], references: [id])
+  term        Term  @relation(fields: [termId], references: [id])
+  generatedBy User? @relation(fields: [generatedById], references: [id])
+
+  billLineItems BillLineItem[]
+  payments      Payment[]
+  paymentPlan   PaymentPlan?
+  demandNotes   DemandNote[]
+
+  @@unique([pupilId, termId])
+  @@index([billingStatus])
+  @@map("pupil_bills")
+}
+
+/// One row per fee category in a bill; stores standard amount, bursary discount, net
+model BillLineItem {
+  id              String   @id @default(uuid()) @db.Uuid
+  pupilBillId     String   @db.Uuid
+  feeCategoryId   String   @db.Uuid
+  standardAmount  Int
+  bursaryDiscount Int      @default(0)
+  manualDiscount  Int      @default(0)
+  netAmount       Int
+  lineStatus      String   @default("pending") @db.VarChar(20)
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(6)
+
+  pupilBill   PupilBill   @relation(fields: [pupilBillId], references: [id], onDelete: Cascade)
+  feeCategory FeeCategory @relation(fields: [feeCategoryId], references: [id])
+
+  @@map("bill_line_items")
+}
+
+/// Every payment event — SchoolPay auto-sync or manual Bursar entry
+model Payment {
+  id                     String   @id @default(uuid()) @db.Uuid
+  pupilBillId            String   @db.Uuid
+  amount                 Int
+  paymentDate            DateTime @db.Date
+  paymentMethod          String   @db.VarChar(30)
+  referenceNumber        String?  @db.VarChar(100)
+  source                 String   @default("manual") @db.VarChar(20)
+  schoolpayTransactionId String?  @unique @db.VarChar(100)
+  notes                  String?
+  recordedById           String?  @db.Uuid
+  createdAt              DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime @updatedAt @db.Timestamptz(6)
+
+  pupilBill  PupilBill @relation(fields: [pupilBillId], references: [id])
+  recordedBy User?     @relation(fields: [recordedById], references: [id])
+
+  @@index([schoolpayTransactionId])
+  @@index([pupilBillId])
+  @@map("payments")
+}
+
+/// Instalment plan — one plan per bill
+model PaymentPlan {
+  id               String   @id @default(uuid()) @db.Uuid
+  pupilBillId      String   @unique @db.Uuid
+  totalInstalments Int      @db.SmallInt
+  notes            String?
+  createdById      String?  @db.Uuid
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @db.Timestamptz(6)
+
+  bill      PupilBill @relation(fields: [pupilBillId], references: [id], onDelete: Cascade)
+  createdBy User?     @relation(fields: [createdById], references: [id])
+
+  instalments PaymentPlanInstalment[]
+
+  @@map("payment_plans")
+}
+
+model PaymentPlanInstalment {
+  id               String   @id @default(uuid()) @db.Uuid
+  paymentPlanId    String   @db.Uuid
+  instalmentNumber Int      @db.SmallInt
+  dueDate          DateTime @db.Date
+  expectedAmount   Int
+  status           String   @default("upcoming") @db.VarChar(20)
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @db.Timestamptz(6)
+
+  paymentPlan PaymentPlan @relation(fields: [paymentPlanId], references: [id], onDelete: Cascade)
+
+  @@map("payment_plan_instalments")
+}
+
+/// Printable fee statement: next-term bill + outstanding balance for report envelope
+model FeeStatement {
+  id              String   @id @default(uuid()) @db.Uuid
+  pupilId         String   @db.Uuid
+  termId          String   @db.Uuid
+  previousBalance Int      @default(0)
+  nextTermTotal   Int
+  grandTotal      Int
+  pdfPath         String?  @db.VarChar(500)
+  generatedById   String?  @db.Uuid
+  generatedAt     DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(6)
+
+  pupil       Pupil @relation(fields: [pupilId], references: [id])
+  term        Term  @relation(fields: [termId], references: [id])
+  generatedBy User? @relation(fields: [generatedById], references: [id])
+
+  @@map("fee_statements")
+}
+
+/// v1.1 NEW: records every fee structure change — triggers bursary recalculation workflow
+model FeeStructureAdjustment {
+  id                     String   @id @default(uuid()) @db.Uuid
+  termId                 String   @db.Uuid
+  adjustmentType         String   @db.VarChar(30)
+  feeCategoryId          String?  @db.Uuid
+  classId                String?  @db.Uuid
+  section                String?  @db.VarChar(20)
+  oldAmount              Int
+  newAmount              Int
+  recalculationTriggered Boolean  @default(false)
+  pupilsRecalculated     Int?
+  notes                  String?
+  adjustedById           String   @db.Uuid
+  adjustedAt             DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime @updatedAt @db.Timestamptz(6)
+
+  term        Term         @relation(fields: [termId], references: [id])
+  feeCategory FeeCategory? @relation(fields: [feeCategoryId], references: [id])
+  class       Class?       @relation(fields: [classId], references: [id])
+  adjustedBy  User         @relation(fields: [adjustedById], references: [id])
+
+  @@map("fee_structure_adjustments")
+}
+
+// =============================================================
+// GROUP F — ACADEMIC PERFORMANCE
+// =============================================================
+
+/// Links an assessment type to a specific term instance (e.g. EOT of Term 1 2026)
+model AssessmentPeriod {
+  id               String    @id @default(uuid()) @db.Uuid
+  termId           String    @db.Uuid
+  assessmentTypeId String    @db.Uuid
+  label            String    @db.VarChar(80)
+  assessmentDate   DateTime? @db.Date
+  scoreEntryOpen   Boolean   @default(false)
+  scoreEntryLocked Boolean   @default(false)
+  createdAt        DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @db.Timestamptz(6)
+
+  term           Term                 @relation(fields: [termId], references: [id])
+  assessmentType AssessmentTypeConfig @relation(fields: [assessmentTypeId], references: [id])
+
+  pupilScores      PupilScore[]
+  pupilTermResults PupilTermResult[]
+  reportCards      ReportCard[]
+
+  @@unique([termId, assessmentTypeId])
+  @@map("assessment_periods")
+}
+
+/// Atomic score unit: score Int? — NULL = absent, 0 = sat and scored zero (DIFFERENT meanings)
+model PupilScore {
+  id                 String   @id @default(uuid()) @db.Uuid
+  pupilId            String   @db.Uuid
+  subjectId          String   @db.Uuid
+  assessmentPeriodId String   @db.Uuid
+  score              Int?     @db.SmallInt
+  gradeLabel         String?  @db.VarChar(10)
+  gradePoints        Int?     @db.SmallInt
+  teacherRemarks     String?
+  teacherInitials    String?  @db.VarChar(10)
+  enteredById        String?  @db.Uuid
+  lastEditedById     String?  @db.Uuid
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @db.Timestamptz(6)
+
+  pupil            Pupil            @relation(fields: [pupilId], references: [id])
+  subject          Subject          @relation(fields: [subjectId], references: [id])
+  assessmentPeriod AssessmentPeriod @relation(fields: [assessmentPeriodId], references: [id])
+  // Two FKs to User — named relations required
+  enteredBy        User?            @relation("PupilScoreEnteredBy", fields: [enteredById], references: [id])
+  lastEditedBy     User?            @relation("PupilScoreLastEditedBy", fields: [lastEditedById], references: [id])
+
+  @@unique([pupilId, subjectId, assessmentPeriodId])
+  @@index([pupilId, assessmentPeriodId])
+  @@index([assessmentPeriodId, subjectId])
+  @@map("pupil_scores")
+}
+
+/// Grading engine output — cached aggregates/divisions/ranks so report cards don't recalculate live
+model PupilTermResult {
+  id                  String    @id @default(uuid()) @db.Uuid
+  pupilId             String    @db.Uuid
+  termId              String    @db.Uuid
+  assessmentPeriodId  String    @db.Uuid
+  aggregatePoints     Int?      @db.SmallInt
+  rawDivisionLabel    String?   @db.VarChar(10)
+  finalDivisionLabel  String?   @db.VarChar(10)
+  f9PenaltyApplied    Boolean   @default(false)
+  f9PenaltySubject    String?   @db.VarChar(120)
+  averageScore        Decimal?  @db.Decimal(5, 2)
+  classRank           Int?      @db.SmallInt
+  totalPupilsInStream Int?      @db.SmallInt
+  promotionNote       String?
+  computedAt          DateTime? @db.Timestamptz(6)
+  computedById        String?   @db.Uuid
+  createdAt           DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime  @updatedAt @db.Timestamptz(6)
+
+  pupil            Pupil            @relation(fields: [pupilId], references: [id])
+  term             Term             @relation(fields: [termId], references: [id])
+  assessmentPeriod AssessmentPeriod @relation(fields: [assessmentPeriodId], references: [id])
+  computedBy       User?            @relation(fields: [computedById], references: [id])
+
+  @@unique([pupilId, termId, assessmentPeriodId])
+  @@index([pupilId, termId])
+  @@map("pupil_term_results")
+}
+
+/// Single-row config controlling how report cards are generated and printed
+model ReportCardSetting {
+  id                     String   @id @default(uuid()) @db.Uuid
+  showBotOnReport        Boolean  @default(true)
+  showMotOnReport        Boolean  @default(true)
+  showEotOnReport        Boolean  @default(true)
+  averagePeriods         Boolean  @default(false)
+  showClassRank          Boolean  @default(true)
+  rankingFormat          String   @default("ordinal") @db.VarChar(30)
+  showGradeGuide         Boolean  @default(true)
+  showSchoolRequirements Boolean  @default(true)
+  showNextTermDates      Boolean  @default(true)
+  whoCanGenerate         String   @default("dos_admin") @db.VarChar(20)
+  updatedById            String?  @db.Uuid
+  createdAt              DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime @updatedAt @db.Timestamptz(6)
+
+  updatedBy User? @relation(fields: [updatedById], references: [id])
+
+  @@map("report_card_settings")
+}
+
+/// Metadata record for each generated report card PDF file
+model ReportCard {
+  id                 String   @id @default(uuid()) @db.Uuid
+  pupilId            String   @db.Uuid
+  termId             String   @db.Uuid
+  assessmentPeriodId String   @db.Uuid
+  reportType         String   @db.VarChar(20)
+  pdfPath            String?  @db.VarChar(500)
+  generatedById      String   @db.Uuid
+  generatedAt        DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @db.Timestamptz(6)
+
+  pupil            Pupil            @relation(fields: [pupilId], references: [id])
+  term             Term             @relation(fields: [termId], references: [id])
+  assessmentPeriod AssessmentPeriod @relation(fields: [assessmentPeriodId], references: [id])
+  generatedBy      User             @relation(fields: [generatedById], references: [id])
+
+  @@unique([pupilId, termId, assessmentPeriodId, reportType])
+  @@map("report_cards")
+}
+
+/// Items pupils must bring next term — printed in the School Requirements section
+model TermRequirement {
+  id              String   @id @default(uuid()) @db.Uuid
+  termId          String   @db.Uuid
+  classId         String?  @db.Uuid
+  itemNumber      Int      @db.SmallInt
+  itemDescription String   @db.VarChar(300)
+  createdById     String?  @db.Uuid
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(6)
+
+  term      Term   @relation(fields: [termId], references: [id], onDelete: Cascade)
+  class     Class? @relation(fields: [classId], references: [id])
+  createdBy User?  @relation(fields: [createdById], references: [id])
+
+  @@map("term_requirements")
+}
+
+// =============================================================
+// GROUP G — COMMUNICATION
+// =============================================================
+
+/// Full chronological parent interaction history re: fees
+/// AAN-001: uses egoSmsMessageId (EgoSMS/comms-sdk) — NOT atMessageId (Africa's Talking)
+model CommunicationLog {
+  id               String    @id @default(uuid()) @db.Uuid
+  pupilId          String    @db.Uuid
+  guardianId       String?   @db.Uuid
+  channel          String    @db.VarChar(20)
+  direction        String    @default("outbound") @db.VarChar(10)
+  phoneNumberUsed  String?   @db.VarChar(30)
+  messageBody      String?
+  callOutcome      String?   @db.VarChar(80)
+  deliveryStatus   String?   @default("sent") @db.VarChar(20)
+  egoSmsMessageId  String?   @db.VarChar(100)
+  staffNotes       String?
+  nextFollowupDate DateTime? @db.Date
+  initiatedById    String?   @db.Uuid
+  createdAt        DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @db.Timestamptz(6)
+
+  pupil       Pupil     @relation(fields: [pupilId], references: [id])
+  guardian    Guardian? @relation(fields: [guardianId], references: [id])
+  initiatedBy User?     @relation(fields: [initiatedById], references: [id])
+
+  demandNotes DemandNote[]
+
+  @@index([pupilId, createdAt(sort: Desc)])
+  @@map("communication_logs")
+}
+
+/// Reusable SMS/WhatsApp message templates with {{placeholder}} support
+model MessageTemplate {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(120)
+  channel     String   @db.VarChar(20)
+  body        String
+  isActive    Boolean  @default(true)
+  createdById String?  @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
+
+  createdBy User? @relation(fields: [createdById], references: [id])
+
+  @@map("message_templates")
+}
+
+/// Formal printed demand letter for outstanding fees
+model DemandNote {
+  id                 String   @id @default(uuid()) @db.Uuid
+  pupilId            String   @db.Uuid
+  pupilBillId        String   @db.Uuid
+  outstandingAmount  Int
+  pdfPath            String?  @db.VarChar(500)
+  generatedById      String   @db.Uuid
+  generatedAt        DateTime @default(now()) @db.Timestamptz(6)
+  communicationLogId String?  @db.Uuid
+  updatedAt          DateTime @updatedAt @db.Timestamptz(6)
+
+  pupil            Pupil             @relation(fields: [pupilId], references: [id])
+  pupilBill        PupilBill         @relation(fields: [pupilBillId], references: [id])
+  generatedBy      User              @relation(fields: [generatedById], references: [id])
+  communicationLog CommunicationLog? @relation(fields: [communicationLogId], references: [id])
+
+  @@map("demand_notes")
+}
+
+// =============================================================
+// GROUP H — SYSTEM
+// =============================================================
+
+/// Key-value store for miscellaneous system-wide settings and feature flags
+model SystemSetting {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique @db.VarChar(120)
+  value       String
+  description String?
+  updatedById String?  @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
+
+  updatedBy User? @relation(fields: [updatedById], references: [id])
+
+  @@map("system_settings")
+}
+
+/// Background job execution history for monitoring (SchoolPay sync, overdue checks, bursary reviews)
+model ScheduledJobLog {
+  id               String    @id @default(uuid()) @db.Uuid
+  jobName          String    @db.VarChar(100)
+  startedAt        DateTime  @db.Timestamptz(6)
+  completedAt      DateTime? @db.Timestamptz(6)
+  status           String    @db.VarChar(20)
+  recordsProcessed Int?
+  errorMessage     String?
+  createdAt        DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@map("scheduled_job_logs")
+}
