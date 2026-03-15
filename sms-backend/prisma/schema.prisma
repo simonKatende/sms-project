@@ -138,20 +138,25 @@ model AuditLog {
 
 /// Single-row table holding school identity and system-wide settings
 model SchoolSetting {
-  id                String   @id @default(uuid()) @db.Uuid
-  schoolName        String   @db.VarChar(200)
-  schoolMotto       String?  @db.VarChar(200)
-  addressLine1      String?  @db.VarChar(200)
-  addressLine2      String?  @db.VarChar(200)
-  phonePrimary      String?  @db.VarChar(30)
-  phoneSecondary    String?  @db.VarChar(30)
-  email             String?  @db.VarChar(200)
-  logoPath          String?  @db.VarChar(500)
-  stampNotice       String?
-  reportFooterMotto String?  @db.VarChar(200)
-  gradeGuideText    String?
-  createdAt         DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt         DateTime @updatedAt @db.Timestamptz(6)
+  id                      String   @id @default(uuid()) @db.Uuid
+  schoolName              String   @db.VarChar(200)
+  schoolMotto             String?  @db.VarChar(200)
+  addressLine1            String?  @db.VarChar(200)
+  addressLine2            String?  @db.VarChar(200)
+  phonePrimary            String?  @db.VarChar(30)
+  phoneSecondary          String?  @db.VarChar(30)
+  email                   String?  @db.VarChar(200)
+  website                 String?  @db.VarChar(200)
+  logoPath                String?  @db.VarChar(500)
+  mobileMoneyMtn          String?  @db.VarChar(30)
+  mobileMoneyAirtel       String?  @db.VarChar(30)
+  mobileMoneyAccountName  String?  @db.VarChar(150)
+  invoiceFineAfterDueDate Int?
+  stampNotice             String?
+  reportFooterMotto       String?  @db.VarChar(200)
+  gradeGuideText          String?
+  createdAt               DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt               DateTime @updatedAt @db.Timestamptz(6)
 
   @@map("school_settings")
 }

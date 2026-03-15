@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../store/authStore.js';
+import { useSchoolStore } from '../store/schoolStore.js';
 import { authApi } from '../api/auth.js';
 
 // ── Nav item definitions ──────────────────────────────────────
@@ -49,8 +50,10 @@ function Initials({ name }) {
 
 // ── Sidebar ───────────────────────────────────────────────────
 function Sidebar({ roleName, fullName, username, onClose }) {
-  const navigate  = useNavigate();
-  const clearAuth = useAuthStore((s) => s.clearAuth);
+  const navigate    = useNavigate();
+  const clearAuth   = useAuthStore((s) => s.clearAuth);
+  const schoolName  = useSchoolStore((s) => s.schoolName);
+  const logoUrl     = useSchoolStore((s) => s.logoUrl);
 
   const { mutate: logout } = useMutation({
     mutationFn: authApi.logout,
@@ -64,11 +67,14 @@ function Sidebar({ roleName, fullName, username, onClose }) {
     <nav className="flex flex-col h-full" style={{ backgroundColor: '#1A3C5E' }}>
       {/* School identity */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
-        <div className="w-9 h-9 rounded-full bg-white/15 flex items-center justify-center shrink-0">
-          <GraduationCap size={20} className="text-white" />
+        <div className="w-9 h-9 rounded-full bg-white/15 flex items-center justify-center shrink-0 overflow-hidden">
+          {logoUrl
+            ? <img src={logoUrl} alt="School logo" className="w-full h-full object-cover" />
+            : <GraduationCap size={20} className="text-white" />
+          }
         </div>
         <div className="min-w-0">
-          <p className="text-white font-semibold text-sm leading-tight truncate">Highfield Primary</p>
+          <p className="text-white font-semibold text-sm leading-tight truncate">{schoolName}</p>
           <p className="text-white/50 text-xs">Management System</p>
         </div>
         {/* Mobile close */}

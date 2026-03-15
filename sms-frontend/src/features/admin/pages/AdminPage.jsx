@@ -11,6 +11,7 @@ import { Plus, Edit2, CheckCircle, XCircle, Loader2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { adminClassesApi, adminStreamsApi } from '../../../api/admin.js';
 import { schoolSectionsApi, academicYearsApi } from '../../../api/academic.js';
+import InstitutionProfileTab from './InstitutionProfileTab.jsx';
 
 // ── Shared helpers ─────────────────────────────────────────────
 
@@ -439,6 +440,7 @@ function StreamsTab() {
 const TABS = [
   { id: 'classes', label: 'Classes' },
   { id: 'streams', label: 'Streams' },
+  { id: 'profile', label: 'Institution Profile' },
 ];
 
 export default function AdminPage() {
@@ -472,6 +474,7 @@ export default function AdminPage() {
       <div>
         {activeTab === 'classes' && <ClassesTab />}
         {activeTab === 'streams' && <StreamsTab />}
+        {activeTab === 'profile' && <InstitutionProfileTab />}
       </div>
     </div>
   );

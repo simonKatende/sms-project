@@ -4,11 +4,13 @@
  * Database connection and server startup are handled in server.js.
  */
 
+import path    from 'path';
 import express from 'express';
-import cors from 'cors';
-import morgan from 'morgan';
-import authRoutes  from './routes/authRoutes.js';
-import pupilRoutes from './routes/pupilRoutes.js';
+import cors    from 'cors';
+import morgan  from 'morgan';
+import authRoutes          from './routes/authRoutes.js';
+import pupilRoutes         from './routes/pupilRoutes.js';
+import adminSettingsRoutes from './routes/adminSettingsRoutes.js';
 import { classRouter, streamRouter, schoolSectionRouter, academicYearRouter }
   from './routes/classStreamRoutes.js';
 
@@ -20,13 +22,18 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*', credentials: true }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
+// ── Static file serving — uploaded files (logos, etc.) ───────
+const STORAGE_PATH = path.resolve(process.env.STORAGE_PATH ?? './storage');
+app.use('/storage', express.static(STORAGE_PATH));
+
 // ── API routes ────────────────────────────────────────────────
-app.use('/api/v1/auth',           authRoutes);
-app.use('/api/v1/pupils',         pupilRoutes);
-app.use('/api/v1/classes',        classRouter);
-app.use('/api/v1/streams',        streamRouter);
+app.use('/api/v1/auth',            authRoutes);
+app.use('/api/v1/pupils',          pupilRoutes);
+app.use('/api/v1/admin/settings',  adminSettingsRoutes);
+app.use('/api/v1/classes',         classRouter);
+app.use('/api/v1/streams',         streamRouter);
 app.use('/api/v1/school-sections', schoolSectionRouter);
-app.use('/api/v1/academic-years', academicYearRouter);
+app.use('/api/v1/academic-years',  academicYearRouter);
 
 // ── Health check ─────────────────────────────────────────────
 app.get('/health', (_req, res) => {
