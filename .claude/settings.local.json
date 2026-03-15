@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(find '/c/Users/simon/Dev Projects/sms-project/sms-frontend' -type f -name *.jsx)",
+      "Bash(npx prisma:*)"
     ]
   }
 }
