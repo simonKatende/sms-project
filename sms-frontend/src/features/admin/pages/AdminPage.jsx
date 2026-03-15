@@ -9,7 +9,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Edit2, CheckCircle, XCircle, Loader2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { adminClassesApi, adminStreamsApi } from '../../../api/admin.js';
+import { adminClassesApi, adminStreamsApi, adminHousesApi } from '../../../api/admin.js';
 import { schoolSectionsApi, academicYearsApi } from '../../../api/academic.js';
 import InstitutionProfileTab from './InstitutionProfileTab.jsx';
 
@@ -434,12 +434,274 @@ function StreamsTab() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// HOUSES TAB
+// ═══════════════════════════════════════════════════════════════
+
+const PRESET_COLOURS = [
+  '#F59E0B', '#EF4444', '#3B82F6', '#10B981',
+  '#8B5CF6', '#F97316', '#EC4899', '#14B8A6',
+];
+
+function ColourDot({ hex, size = 12 }) {
+  if (!hex) return <span className="inline-block w-3 h-3 rounded-full bg-gray-200" />;
+  return (
+    <span
+      className="inline-block rounded-full shrink-0"
+      style={{ width: size, height: size, backgroundColor: hex }}
+    />
+  );
+}
+
+function HousesTab() {
+  const qc = useQueryClient();
+  const [modal, setModal] = useState(null); // null | { mode:'create'|'edit', house? }
+  const [form, setForm]   = useState({ name: '', colourHex: '' });
+  const [formErr, setFormErr] = useState({});
+  const [deleteTarget, setDeleteTarget] = useState(null); // house to confirm-delete
+
+  const { data: housesData, isLoading } = useQuery({
+    queryKey: ['admin-houses'],
+    queryFn:  () => adminHousesApi.list().then(r => r.data.data),
+  });
+  const houses = housesData ?? [];
+
+  const openCreate = () => {
+    setForm({ name: '', colourHex: PRESET_COLOURS[0] });
+    setFormErr({});
+    setModal({ mode: 'create' });
+  };
+  const openEdit = (h) => {
+    setForm({ name: h.name, colourHex: h.colourHex ?? '' });
+    setFormErr({});
+    setModal({ mode: 'edit', house: h });
+  };
+
+  const validate = () => {
+    const errs = {};
+    if (!form.name.trim()) errs.name = 'Required';
+    if (form.colourHex && !/^#[0-9A-Fa-f]{3,8}$/.test(form.colourHex))
+      errs.colourHex = 'Must be a valid hex colour (e.g. #F59E0B)';
+    setFormErr(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const { mutate: saveHouse, isPending: saving } = useMutation({
+    mutationFn: (payload) => modal?.mode === 'create'
+      ? adminHousesApi.create(payload)
+      : adminHousesApi.update(modal.house.id, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-houses'] });
+      qc.invalidateQueries({ queryKey: ['houses-active'] });
+      toast.success(modal?.mode === 'create' ? 'House created' : 'House updated');
+      setModal(null);
+    },
+    onError: (e) => toast.error(e.response?.data?.errors?.[0]?.msg ?? e.response?.data?.error ?? 'Save failed'),
+  });
+
+  const { mutate: toggleActive, isPending: toggling } = useMutation({
+    mutationFn: ({ id, isActive }) => adminHousesApi.update(id, { isActive }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-houses'] });
+      qc.invalidateQueries({ queryKey: ['houses-active'] });
+    },
+    onError: (e) => toast.error(e.response?.data?.error ?? 'Update failed'),
+  });
+
+  const { mutate: removeHouse, isPending: deleting } = useMutation({
+    mutationFn: (id) => adminHousesApi.delete(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-houses'] });
+      qc.invalidateQueries({ queryKey: ['houses-active'] });
+      toast.success('House deleted');
+      setDeleteTarget(null);
+    },
+    onError: (e) => {
+      toast.error(e.response?.data?.error ?? 'Delete failed');
+      setDeleteTarget(null);
+    },
+  });
+
+  const handleSave = () => {
+    if (!validate()) return;
+    saveHouse({ name: form.name.trim(), colourHex: form.colourHex || undefined });
+  };
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm text-gray-500">
+          Houses are assigned to pupils at registration. Cannot delete a house with pupils — deactivate instead.
+        </p>
+        <button onClick={openCreate}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg text-white"
+                style={{ backgroundColor: '#2471A3' }}>
+          <Plus size={14} /> Add House
+        </button>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {isLoading ? (
+          <div className="p-10 text-center text-gray-400"><Loader2 size={20} className="animate-spin mx-auto" /></div>
+        ) : houses.length === 0 ? (
+          <div className="p-10 text-center text-gray-400">No houses yet. Add one to get started.</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50">
+                {['House', 'Colour', 'Pupils', 'Status', ''].map(h => (
+                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {houses.map(h => (
+                <tr key={h.id} className="hover:bg-gray-50/50">
+                  <td className="px-4 py-3 font-medium text-gray-900 flex items-center gap-2">
+                    <ColourDot hex={h.colourHex} size={14} />
+                    {h.name}
+                  </td>
+                  <td className="px-4 py-3">
+                    {h.colourHex ? (
+                      <span className="flex items-center gap-1.5 text-gray-600 font-mono text-xs">
+                        <ColourDot hex={h.colourHex} size={16} />
+                        {h.colourHex}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400 text-xs">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-gray-500">{h._count?.pupils ?? 0}</td>
+                  <td className="px-4 py-3"><Badge active={h.isActive} /></td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex items-center justify-end gap-3">
+                      <button onClick={() => openEdit(h)}
+                              className="text-xs font-medium text-primary hover:underline flex items-center gap-1">
+                        <Edit2 size={11} /> Edit
+                      </button>
+                      <button
+                        onClick={() => toggleActive({ id: h.id, isActive: !h.isActive })}
+                        disabled={toggling}
+                        className={`text-xs font-medium hover:underline ${h.isActive ? 'text-amber-600' : 'text-green-600'}`}
+                      >
+                        {h.isActive ? 'Deactivate' : 'Activate'}
+                      </button>
+                      {(h._count?.pupils ?? 0) === 0 && (
+                        <button
+                          onClick={() => setDeleteTarget(h)}
+                          className="text-xs font-medium text-red-500 hover:underline"
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Add / Edit modal */}
+      {modal && (
+        <Modal
+          title={modal.mode === 'create' ? 'Add House' : 'Edit House'}
+          onClose={() => setModal(null)}
+        >
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">House Name *</label>
+              <input
+                value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                placeholder="e.g. Yellow-Lion"
+                className={inputCls(!!formErr.name)}
+              />
+              {formErr.name && <p className="mt-1 text-xs text-red-600">{formErr.name}</p>}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Colour</label>
+              {/* Preset swatches */}
+              <div className="flex flex-wrap gap-2 mb-2">
+                {PRESET_COLOURS.map(c => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, colourHex: c }))}
+                    className={`w-7 h-7 rounded-full border-2 transition-transform ${
+                      form.colourHex === c ? 'border-gray-700 scale-110' : 'border-transparent'
+                    }`}
+                    style={{ backgroundColor: c }}
+                    title={c}
+                  />
+                ))}
+              </div>
+              {/* Hex input */}
+              <div className="flex items-center gap-2">
+                <ColourDot hex={form.colourHex} size={20} />
+                <input
+                  value={form.colourHex}
+                  onChange={e => setForm(f => ({ ...f, colourHex: e.target.value }))}
+                  placeholder="#F59E0B"
+                  className={`flex-1 ${inputCls(!!formErr.colourHex)} font-mono`}
+                />
+              </div>
+              {formErr.colourHex && <p className="mt-1 text-xs text-red-600">{formErr.colourHex}</p>}
+              <p className="mt-1 text-xs text-gray-400">Click a swatch or type a hex value</p>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setModal(null)}
+                      className="flex-1 py-2 rounded-lg text-sm border border-gray-200 hover:bg-gray-50">
+                Cancel
+              </button>
+              <button onClick={handleSave} disabled={saving}
+                      className="flex-1 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+                      style={{ backgroundColor: '#2471A3' }}>
+                {saving ? <Loader2 size={14} className="animate-spin mx-auto" /> : 'Save'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete confirmation */}
+      {deleteTarget && (
+        <Modal title="Delete House" onClose={() => setDeleteTarget(null)}>
+          <p className="text-sm text-gray-700 mb-5">
+            Are you sure you want to permanently delete <strong>{deleteTarget.name}</strong>?
+            This cannot be undone.
+          </p>
+          <div className="flex gap-3">
+            <button onClick={() => setDeleteTarget(null)}
+                    className="flex-1 py-2 rounded-lg text-sm border border-gray-200 hover:bg-gray-50">
+              Cancel
+            </button>
+            <button
+              onClick={() => removeHouse(deleteTarget.id)}
+              disabled={deleting}
+              className="flex-1 py-2 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+            >
+              {deleting ? <Loader2 size={14} className="animate-spin mx-auto" /> : 'Delete'}
+            </button>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ═══════════════════════════════════════════════════════════════
 
 const TABS = [
   { id: 'classes', label: 'Classes' },
   { id: 'streams', label: 'Streams' },
+  { id: 'houses',  label: 'Houses' },
   { id: 'profile', label: 'Institution Profile' },
 ];
 
@@ -474,6 +736,7 @@ export default function AdminPage() {
       <div>
         {activeTab === 'classes' && <ClassesTab />}
         {activeTab === 'streams' && <StreamsTab />}
+        {activeTab === 'houses'  && <HousesTab />}
         {activeTab === 'profile' && <InstitutionProfileTab />}
       </div>
     </div>

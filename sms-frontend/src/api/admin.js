@@ -25,3 +25,11 @@ export const schoolProfileApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
 };
+
+export const adminHousesApi = {
+  list:         ()          => apiClient.get('/admin/houses'),
+  listActive:   ()          => apiClient.get('/admin/houses/active'),
+  create:       (data)      => apiClient.post('/admin/houses', data),
+  update:       (id, data)  => apiClient.put(`/admin/houses/${id}`, data),
+  delete:       (id)        => apiClient.delete(`/admin/houses/${id}`),
+};

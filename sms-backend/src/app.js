@@ -11,6 +11,7 @@ import morgan  from 'morgan';
 import authRoutes          from './routes/authRoutes.js';
 import pupilRoutes         from './routes/pupilRoutes.js';
 import adminSettingsRoutes from './routes/adminSettingsRoutes.js';
+import houseRoutes         from './routes/houseRoutes.js';
 import { classRouter, streamRouter, schoolSectionRouter, academicYearRouter }
   from './routes/classStreamRoutes.js';
 
@@ -30,6 +31,7 @@ app.use('/storage', express.static(STORAGE_PATH));
 app.use('/api/v1/auth',            authRoutes);
 app.use('/api/v1/pupils',          pupilRoutes);
 app.use('/api/v1/admin/settings',  adminSettingsRoutes);
+app.use('/api/v1/admin/houses',    houseRoutes);
 app.use('/api/v1/classes',         classRouter);
 app.use('/api/v1/streams',         streamRouter);
 app.use('/api/v1/school-sections', schoolSectionRouter);

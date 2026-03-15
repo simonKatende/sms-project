@@ -80,7 +80,12 @@ CREATE TABLE "school_settings" (
     "phonePrimary" VARCHAR(30),
     "phoneSecondary" VARCHAR(30),
     "email" VARCHAR(200),
+    "website" VARCHAR(200),
     "logoPath" VARCHAR(500),
+    "mobileMoneyMtn" VARCHAR(30),
+    "mobileMoneyAirtel" VARCHAR(30),
+    "mobileMoneyAccountName" VARCHAR(150),
+    "invoiceFineAfterDueDate" INTEGER,
     "stampNotice" TEXT,
     "reportFooterMotto" VARCHAR(200),
     "gradeGuideText" TEXT,
@@ -265,6 +270,18 @@ CREATE TABLE "assessment_type_configs" (
 );
 
 -- CreateTable
+CREATE TABLE "houses" (
+    "id" UUID NOT NULL,
+    "name" VARCHAR(80) NOT NULL,
+    "colourHex" VARCHAR(10),
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "houses_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "pupils" (
     "id" UUID NOT NULL,
     "pupilIdCode" VARCHAR(30) NOT NULL,
@@ -276,7 +293,7 @@ CREATE TABLE "pupils" (
     "dateOfBirth" DATE NOT NULL,
     "gender" VARCHAR(10) NOT NULL,
     "religion" VARCHAR(60),
-    "house" VARCHAR(60),
+    "houseId" UUID,
     "medicalConditions" TEXT,
     "formerSchool" VARCHAR(200),
     "streamId" UUID,
@@ -292,33 +309,48 @@ CREATE TABLE "pupils" (
 );
 
 -- CreateTable
-CREATE TABLE "guardians" (
+CREATE TABLE "pupil_parents" (
+    "id" UUID NOT NULL,
+    "pupilId" UUID NOT NULL,
+    "parentType" VARCHAR(10) NOT NULL,
+    "fullName" VARCHAR(150) NOT NULL,
+    "phone" VARCHAR(30),
+    "email" VARCHAR(200),
+    "address" TEXT,
+    "nin" VARCHAR(50),
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "pupil_parents_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "contact_persons" (
     "id" UUID NOT NULL,
     "fullName" VARCHAR(150) NOT NULL,
     "relationship" VARCHAR(60) NOT NULL,
-    "phoneCall" VARCHAR(30) NOT NULL,
-    "phoneWhatsapp" VARCHAR(30),
+    "primaryPhone" VARCHAR(30) NOT NULL,
+    "secondaryPhone" VARCHAR(30),
+    "whatsappIndicator" VARCHAR(10) NOT NULL DEFAULT 'primary',
     "email" VARCHAR(200),
     "physicalAddress" TEXT,
-    "occupation" VARCHAR(100),
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "deletedAt" TIMESTAMPTZ(6),
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMPTZ(6) NOT NULL,
 
-    CONSTRAINT "guardians_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "contact_persons_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "pupil_guardians" (
+CREATE TABLE "pupil_contact_persons" (
     "id" UUID NOT NULL,
     "pupilId" UUID NOT NULL,
-    "guardianId" UUID NOT NULL,
-    "isPrimaryContact" BOOLEAN NOT NULL DEFAULT false,
+    "contactPersonId" UUID NOT NULL,
+    "isPrimary" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
 
-    CONSTRAINT "pupil_guardians_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "pupil_contact_persons_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -624,7 +656,7 @@ CREATE TABLE "term_requirements" (
 CREATE TABLE "communication_logs" (
     "id" UUID NOT NULL,
     "pupilId" UUID NOT NULL,
-    "guardianId" UUID,
+    "contactPersonId" UUID,
     "channel" VARCHAR(20) NOT NULL,
     "direction" VARCHAR(10) NOT NULL DEFAULT 'outbound',
     "phoneNumberUsed" VARCHAR(30),
@@ -756,6 +788,9 @@ CREATE UNIQUE INDEX "grading_scale_entries_gradingScaleId_pointsValue_key" ON "g
 CREATE UNIQUE INDEX "assessment_type_configs_code_key" ON "assessment_type_configs"("code");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "houses_name_key" ON "houses"("name");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "pupils_pupilIdCode_key" ON "pupils"("pupilIdCode");
 
 -- CreateIndex
@@ -780,7 +815,13 @@ CREATE INDEX "pupils_streamId_idx" ON "pupils"("streamId");
 CREATE INDEX "pupils_isActive_deletedAt_idx" ON "pupils"("isActive", "deletedAt");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "pupil_guardians_pupilId_guardianId_key" ON "pupil_guardians"("pupilId", "guardianId");
+CREATE UNIQUE INDEX "pupil_parents_pupilId_parentType_key" ON "pupil_parents"("pupilId", "parentType");
+
+-- CreateIndex
+CREATE INDEX "contact_persons_primaryPhone_idx" ON "contact_persons"("primaryPhone");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "pupil_contact_persons_pupilId_contactPersonId_key" ON "pupil_contact_persons"("pupilId", "contactPersonId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "pupil_photos_pupilId_key" ON "pupil_photos"("pupilId");
@@ -906,13 +947,19 @@ ALTER TABLE "assessment_type_configs" ADD CONSTRAINT "assessment_type_configs_cr
 ALTER TABLE "pupils" ADD CONSTRAINT "pupils_streamId_fkey" FOREIGN KEY ("streamId") REFERENCES "streams"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "pupils" ADD CONSTRAINT "pupils_houseId_fkey" FOREIGN KEY ("houseId") REFERENCES "houses"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "pupils" ADD CONSTRAINT "pupils_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "pupil_guardians" ADD CONSTRAINT "pupil_guardians_pupilId_fkey" FOREIGN KEY ("pupilId") REFERENCES "pupils"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "pupil_parents" ADD CONSTRAINT "pupil_parents_pupilId_fkey" FOREIGN KEY ("pupilId") REFERENCES "pupils"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "pupil_guardians" ADD CONSTRAINT "pupil_guardians_guardianId_fkey" FOREIGN KEY ("guardianId") REFERENCES "guardians"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "pupil_contact_persons" ADD CONSTRAINT "pupil_contact_persons_pupilId_fkey" FOREIGN KEY ("pupilId") REFERENCES "pupils"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "pupil_contact_persons" ADD CONSTRAINT "pupil_contact_persons_contactPersonId_fkey" FOREIGN KEY ("contactPersonId") REFERENCES "contact_persons"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "pupil_photos" ADD CONSTRAINT "pupil_photos_pupilId_fkey" FOREIGN KEY ("pupilId") REFERENCES "pupils"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -1059,7 +1106,7 @@ ALTER TABLE "term_requirements" ADD CONSTRAINT "term_requirements_createdById_fk
 ALTER TABLE "communication_logs" ADD CONSTRAINT "communication_logs_pupilId_fkey" FOREIGN KEY ("pupilId") REFERENCES "pupils"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "communication_logs" ADD CONSTRAINT "communication_logs_guardianId_fkey" FOREIGN KEY ("guardianId") REFERENCES "guardians"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "communication_logs" ADD CONSTRAINT "communication_logs_contactPersonId_fkey" FOREIGN KEY ("contactPersonId") REFERENCES "contact_persons"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "communication_logs" ADD CONSTRAINT "communication_logs_initiatedById_fkey" FOREIGN KEY ("initiatedById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;

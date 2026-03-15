@@ -403,6 +403,20 @@ model AssessmentTypeConfig {
 // GROUP D — PUPILS & FAMILIES
 // =============================================================
 
+/// Configurable school houses (e.g. Lion, Leopard, Cheetah, Tiger)
+model House {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique @db.VarChar(80)
+  colourHex String?  @db.VarChar(10)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  pupils Pupil[]
+
+  @@map("houses")
+}
+
 /// Central pupil registry — the most critical table in the schema
 model Pupil {
   id                String    @id @default(uuid()) @db.Uuid
@@ -415,7 +429,7 @@ model Pupil {
   dateOfBirth       DateTime  @db.Date
   gender            String    @db.VarChar(10)
   religion          String?   @db.VarChar(60)
-  house             String?   @db.VarChar(60)
+  houseId           String?   @db.Uuid
   medicalConditions String?
   formerSchool      String?   @db.VarChar(200)
   streamId          String?   @db.Uuid
@@ -428,6 +442,7 @@ model Pupil {
   updatedAt         DateTime  @updatedAt @db.Timestamptz(6)
 
   stream    Stream? @relation(fields: [streamId], references: [id])
+  house     House?  @relation(fields: [houseId], references: [id])
   createdBy User?   @relation(fields: [createdById], references: [id])
 
   pupilParents         PupilParent[]

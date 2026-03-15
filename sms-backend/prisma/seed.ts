@@ -355,6 +355,28 @@ async function seedAcademicStructure() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 9. HOUSES
+// ─────────────────────────────────────────────────────────────────────────────
+async function seedHouses() {
+  const defaults = [
+    { name: 'Yellow-Lion',    colourHex: '#F59E0B' },
+    { name: 'Red-Leopard',    colourHex: '#EF4444' },
+    { name: 'Blue-Cheetah',   colourHex: '#3B82F6' },
+    { name: 'Green-Tiger',    colourHex: '#10B981' },
+  ];
+
+  for (const h of defaults) {
+    await prisma.house.upsert({
+      where:  { name: h.name },
+      update: { colourHex: h.colourHex, isActive: true },
+      create: { ...h, isActive: true },
+    });
+  }
+
+  console.log('✓  Houses seeded (4 defaults)');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN
 // ─────────────────────────────────────────────────────────────────────────────
 async function main() {
@@ -370,6 +392,7 @@ async function main() {
   await seedReportCardSettings();
   await seedAdminUser();
   await seedAcademicStructure();
+  await seedHouses();
 
   console.log('─────────────────────────────────────────────────────');
   console.log('  Seed complete.\n');

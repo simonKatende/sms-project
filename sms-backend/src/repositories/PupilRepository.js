@@ -127,6 +127,7 @@ export async function createPupilTransaction({
       where: { id: pupil.id },
       include: {
         stream:              { include: { class: true } },
+        house:               true,
         pupilParents:        true,
         pupilContactPersons: { include: { contactPerson: true } },
         pupilBursaries:      { include: { bursaryScheme: true } },
@@ -171,6 +172,7 @@ function buildWhere({ search, classId, streamId, section, isActive }) {
 // Includes for the list view (lightweight)
 const LIST_INCLUDE = {
   stream: { include: { class: true } },
+  house:  true,
   pupilContactPersons: {
     where: { isPrimary: true },
     include: { contactPerson: { select: { fullName: true, primaryPhone: true, relationship: true } } },
@@ -204,6 +206,7 @@ export async function findPupilById(id) {
     where: { id, deletedAt: null },
     include: {
       stream:              { include: { class: { include: { schoolSection: true } } } },
+      house:               true,
       pupilParents:        true,
       pupilContactPersons: { include: { contactPerson: true } },
       pupilBursaries:      { include: { bursaryScheme: true } },

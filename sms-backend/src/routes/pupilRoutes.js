@@ -29,6 +29,7 @@ const registerValidation = [
     .custom(val => { if (new Date(val) >= new Date()) throw new Error('dateOfBirth must be in the past'); return true; }),
   body('gender').notEmpty().isIn(['Male', 'Female']).withMessage('gender must be Male or Female'),
   body('section').notEmpty().isIn(['Day', 'Boarding']).withMessage('section must be Day or Boarding'),
+  body('houseId').optional({ checkFalsy: true }).isUUID().withMessage('houseId must be a valid UUID'),
   // Contact person (required)
   body('contactPerson.fullName').trim().notEmpty().withMessage('contactPerson.fullName is required'),
   body('contactPerson.relationship').trim().notEmpty().withMessage('contactPerson.relationship is required'),
@@ -52,6 +53,7 @@ const updateValidation = [
     .custom(val => { if (new Date(val) >= new Date()) throw new Error('dateOfBirth must be in the past'); return true; }),
   body('gender').optional().isIn(['Male', 'Female']),
   body('section').optional().isIn(['Day', 'Boarding']),
+  body('houseId').optional({ checkFalsy: true }).isUUID().withMessage('houseId must be a valid UUID'),
 ];
 
 // ── Routes (order matters — specific before :id) ──────────────

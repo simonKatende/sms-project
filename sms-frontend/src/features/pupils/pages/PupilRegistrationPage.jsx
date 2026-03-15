@@ -8,6 +8,7 @@ import { Camera, X, AlertCircle, CheckCircle2, ChevronLeft, ChevronDown, Chevron
 import toast from 'react-hot-toast';
 import { pupilsApi } from '../../../api/pupils.js';
 import { classesApi, streamsApi } from '../../../api/academic.js';
+import { adminHousesApi } from '../../../api/admin.js';
 
 // ── Zod schema ────────────────────────────────────────────────
 const ugandaPhone = /^\+256[0-9]{9}$/;
@@ -29,7 +30,7 @@ const schema = z.object({
   gender:            z.enum(['Male', 'Female'], { required_error: 'Required' }),
   section:           z.enum(['Day', 'Boarding'], { required_error: 'Required' }),
   religion:          z.string().optional(),
-  house:             z.string().optional(),
+  houseId:           z.string().optional(),
   formerSchool:      z.string().optional(),
   medicalConditions: z.string().optional(),
   lin:               z.string().optional(),
@@ -325,6 +326,14 @@ export default function PupilRegistrationPage() {
   const agreedNetFees       = standardFeesAtAward - discountUgx;
   const contactPhone        = watch('contactPerson.primaryPhone');
 
+  // Houses dropdown
+  const { data: housesData } = useQuery({
+    queryKey: ['houses-active'],
+    queryFn:  () => adminHousesApi.listActive().then(r => r.data.data),
+    staleTime: 10 * 60_000,
+  });
+  const houses = housesData ?? [];
+
   // Dynamic classes + streams
   const { data: classesData } = useQuery({
     queryKey: ['classes'],
@@ -356,7 +365,7 @@ export default function PupilRegistrationPage() {
 
       // Scalar pupil fields
       const scalars = ['firstName','lastName','otherNames','dateOfBirth','gender','section',
-                       'religion','house','formerSchool','medicalConditions','lin',
+                       'religion','houseId','formerSchool','medicalConditions','lin',
                        'schoolpayCode','streamId','enrolmentDate'];
       for (const key of scalars) {
         if (data[key] != null && data[key] !== '') fd.append(key, data[key]);
@@ -463,8 +472,26 @@ export default function PupilRegistrationPage() {
             <Field label="Religion" error={errors.religion?.message}>
               <Input {...register('religion')} placeholder="e.g. Catholic" />
             </Field>
-            <Field label="House" error={errors.house?.message}>
-              <Input {...register('house')} placeholder="e.g. Blue House" />
+            <Field label="House" error={errors.houseId?.message}>
+              <div className="relative">
+                <Select {...register('houseId')} error={errors.houseId}>
+                  <option value="">— No house —</option>
+                  {houses.map(h => (
+                    <option key={h.id} value={h.id}>{h.name}</option>
+                  ))}
+                </Select>
+                {/* Coloured dot overlay for selected house */}
+                {(() => {
+                  const selectedId = watch('houseId');
+                  const h = houses.find(x => x.id === selectedId);
+                  return h?.colourHex ? (
+                    <span
+                      className="pointer-events-none absolute right-8 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full"
+                      style={{ backgroundColor: h.colourHex }}
+                    />
+                  ) : null;
+                })()}
+              </div>
             </Field>
             <Field label="LIN (Learner ID Number)" error={errors.lin?.message}
                    hint="Ministry of Education learner number">

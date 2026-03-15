@@ -106,7 +106,7 @@ export async function registerPupil({
     dateOfBirth:       new Date(pupilFields.dateOfBirth),
     gender:            pupilFields.gender,
     religion:          pupilFields.religion         ?? null,
-    house:             pupilFields.house            ?? null,
+    houseId:           pupilFields.houseId          ?? null,
     medicalConditions: pupilFields.medicalConditions ?? null,
     formerSchool:      pupilFields.formerSchool     ?? null,
     streamId:          pupilFields.streamId         ?? null,
@@ -307,7 +307,7 @@ export async function updatePupil(id, fields, { userId, ipAddress }) {
 
   const data = {};
   const allowed = ['firstName','lastName','otherNames','dateOfBirth','gender','religion',
-    'house','medicalConditions','formerSchool','streamId','section','enrolmentDate',
+    'houseId','medicalConditions','formerSchool','streamId','section','enrolmentDate',
     'lin','schoolpayCode','isActive'];
   for (const key of allowed) {
     if (fields[key] !== undefined) data[key] = fields[key];
