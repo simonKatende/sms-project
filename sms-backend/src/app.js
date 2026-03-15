@@ -14,6 +14,8 @@ import adminSettingsRoutes from './routes/adminSettingsRoutes.js';
 import houseRoutes         from './routes/houseRoutes.js';
 import { classRouter, streamRouter, schoolSectionRouter, academicYearRouter }
   from './routes/classStreamRoutes.js';
+import { academicYearAdminRouter, termAdminRouter }
+  from './routes/academicCalendarRoutes.js';
 
 const app = express();
 
@@ -35,7 +37,9 @@ app.use('/api/v1/admin/houses',    houseRoutes);
 app.use('/api/v1/classes',         classRouter);
 app.use('/api/v1/streams',         streamRouter);
 app.use('/api/v1/school-sections', schoolSectionRouter);
-app.use('/api/v1/academic-years',  academicYearRouter);
+app.use('/api/v1/academic-years',       academicYearRouter);
+app.use('/api/v1/admin/academic-years', academicYearAdminRouter);
+app.use('/api/v1/admin/terms',          termAdminRouter);
 
 // ── Health check ─────────────────────────────────────────────
 app.get('/health', (_req, res) => {
