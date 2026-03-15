@@ -8,6 +8,13 @@ import { prisma } from '../lib/prisma.js';
 
 const CLASS_INCLUDE = {
   schoolSection: { select: { id: true, name: true, code: true, rankingMethod: true } },
+  classSubGroup: {
+    select: {
+      id:   true,
+      name: true,
+      classGroup: { select: { id: true, name: true } },
+    },
+  },
   _count: { select: { streams: true } },
 };
 
@@ -41,9 +48,9 @@ export async function findClassById(id) {
   return prisma.class.findUnique({ where: { id }, include: CLASS_INCLUDE });
 }
 
-export async function createClass({ schoolSectionId, name, levelOrder }) {
+export async function createClass({ schoolSectionId, classSubGroupId, name, levelOrder }) {
   return prisma.class.create({
-    data:    { schoolSectionId, name, levelOrder },
+    data:    { schoolSectionId, classSubGroupId: classSubGroupId ?? null, name, levelOrder },
     include: CLASS_INCLUDE,
   });
 }

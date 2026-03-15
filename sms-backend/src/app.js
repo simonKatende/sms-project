@@ -16,6 +16,8 @@ import { classRouter, streamRouter, schoolSectionRouter, academicYearRouter }
   from './routes/classStreamRoutes.js';
 import { academicYearAdminRouter, termAdminRouter }
   from './routes/academicCalendarRoutes.js';
+import { classGroupRouter, classSubGroupRouter, classHierarchyRouter }
+  from './routes/classHierarchyRoutes.js';
 
 const app = express();
 
@@ -38,8 +40,11 @@ app.use('/api/v1/classes',         classRouter);
 app.use('/api/v1/streams',         streamRouter);
 app.use('/api/v1/school-sections', schoolSectionRouter);
 app.use('/api/v1/academic-years',       academicYearRouter);
-app.use('/api/v1/admin/academic-years', academicYearAdminRouter);
-app.use('/api/v1/admin/terms',          termAdminRouter);
+app.use('/api/v1/admin/academic-years',  academicYearAdminRouter);
+app.use('/api/v1/admin/terms',           termAdminRouter);
+app.use('/api/v1/admin/class-groups',    classGroupRouter);
+app.use('/api/v1/admin/class-sub-groups', classSubGroupRouter);
+app.use('/api/v1/admin/class-hierarchy', classHierarchyRouter);
 
 // ── Health check ─────────────────────────────────────────────
 app.get('/health', (_req, res) => {

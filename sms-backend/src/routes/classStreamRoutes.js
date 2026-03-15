@@ -17,6 +17,7 @@ classRouter.use(authenticate);
 
 const classCreateValidation = [
   body('schoolSectionId').notEmpty().isUUID().withMessage('schoolSectionId must be a valid UUID'),
+  body('classSubGroupId').notEmpty().isUUID().withMessage('classSubGroupId must be a valid UUID'),
   body('name').trim().notEmpty().withMessage('name is required').isLength({ max: 40 }),
   body('levelOrder').isInt({ min: 0 }).withMessage('levelOrder must be a non-negative integer'),
 ];

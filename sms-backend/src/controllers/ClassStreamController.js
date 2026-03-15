@@ -28,8 +28,8 @@ export async function createClass(req, res) {
   const errs = validationResult(req);
   if (!errs.isEmpty()) return sendErrors(res, errs);
 
-  const { schoolSectionId, name, levelOrder } = req.body;
-  const cls = await Repo.createClass({ schoolSectionId, name, levelOrder: parseInt(levelOrder, 10) });
+  const { schoolSectionId, classSubGroupId, name, levelOrder } = req.body;
+  const cls = await Repo.createClass({ schoolSectionId, classSubGroupId, name, levelOrder: parseInt(levelOrder, 10) });
   res.status(201).json({ data: cls });
 }
 
