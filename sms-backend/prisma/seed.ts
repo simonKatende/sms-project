@@ -282,9 +282,50 @@ async function seedAdminUser() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. ACADEMIC YEAR, CLASSES & STREAMS
+// 6. CLASS HIERARCHY (class_groups → class_sub_groups)
 // ─────────────────────────────────────────────────────────────────────────────
-async function seedAcademicStructure() {
+async function seedClassHierarchy() {
+  // ── Class groups ────────────────────────────────────────────
+  const kg = await prisma.classGroup.upsert({
+    where:  { name: 'Kindergarten' },
+    update: { displayOrder: 1, isActive: true },
+    create: { name: 'Kindergarten', displayOrder: 1, isActive: true },
+  });
+  const primary = await prisma.classGroup.upsert({
+    where:  { name: 'Primary' },
+    update: { displayOrder: 2, isActive: true },
+    create: { name: 'Primary', displayOrder: 2, isActive: true },
+  });
+
+  // ── Class sub-groups ────────────────────────────────────────
+  const prePrimary = await prisma.classSubGroup.upsert({
+    where:  { classGroupId_name: { classGroupId: kg.id, name: 'PrePrimary' } },
+    update: { displayOrder: 1, isActive: true },
+    create: { classGroupId: kg.id, name: 'PrePrimary', displayOrder: 1, isActive: true },
+  });
+  const lowerPrimary = await prisma.classSubGroup.upsert({
+    where:  { classGroupId_name: { classGroupId: primary.id, name: 'LowerPrimary' } },
+    update: { displayOrder: 1, isActive: true },
+    create: { classGroupId: primary.id, name: 'LowerPrimary', displayOrder: 1, isActive: true },
+  });
+  const upperPrimary = await prisma.classSubGroup.upsert({
+    where:  { classGroupId_name: { classGroupId: primary.id, name: 'UpperPrimary' } },
+    update: { displayOrder: 2, isActive: true },
+    create: { classGroupId: primary.id, name: 'UpperPrimary', displayOrder: 2, isActive: true },
+  });
+
+  console.log('✓  Class groups seeded (2: Kindergarten, Primary)');
+  console.log('✓  Class sub-groups seeded (3: PrePrimary, LowerPrimary, UpperPrimary)');
+
+  return { prePrimary, lowerPrimary, upperPrimary };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. ACADEMIC YEAR, CLASSES & STREAMS
+// ─────────────────────────────────────────────────────────────────────────────
+async function seedAcademicStructure(subGroups: Awaited<ReturnType<typeof seedClassHierarchy>>) {
+  const { prePrimary, lowerPrimary, upperPrimary } = subGroups;
+
   // ── Academic year ───────────────────────────────────────────
   const year = await prisma.academicYear.upsert({
     where:  { yearLabel: '2026' },
@@ -302,39 +343,54 @@ async function seedAcademicStructure() {
   const upper = await prisma.schoolSection.findUniqueOrThrow({ where: { code: 'UPPER' } });
 
   // ── Classes ─────────────────────────────────────────────────
+  // Kindergarten classes use the LOWER section (no grading aggregate — same ranking method)
+  // schoolSectionId is still needed for grading rules; classSubGroupId drives the hierarchy.
   const classDefs = [
-    { name: 'Nursery', levelOrder: 0, sectionId: lower.id },
-    { name: 'P.1',     levelOrder: 1, sectionId: lower.id },
-    { name: 'P.2',     levelOrder: 2, sectionId: lower.id },
-    { name: 'P.3',     levelOrder: 3, sectionId: lower.id },
-    { name: 'P.4',     levelOrder: 4, sectionId: upper.id },
-    { name: 'P.5',     levelOrder: 5, sectionId: upper.id },
-    { name: 'P.6',     levelOrder: 6, sectionId: upper.id },
-    { name: 'P.7',     levelOrder: 7, sectionId: upper.id },
+    { name: 'Baby',     levelOrder: 0, sectionId: lower.id, subGroupId: prePrimary.id },
+    { name: 'Day Care', levelOrder: 1, sectionId: lower.id, subGroupId: prePrimary.id },
+    { name: 'Middle',   levelOrder: 2, sectionId: lower.id, subGroupId: prePrimary.id },
+    { name: 'Top',      levelOrder: 3, sectionId: lower.id, subGroupId: prePrimary.id },
+    { name: 'P.1',      levelOrder: 4, sectionId: lower.id, subGroupId: lowerPrimary.id },
+    { name: 'P.2',      levelOrder: 5, sectionId: lower.id, subGroupId: lowerPrimary.id },
+    { name: 'P.3',      levelOrder: 6, sectionId: lower.id, subGroupId: lowerPrimary.id },
+    { name: 'P.4',      levelOrder: 7, sectionId: upper.id, subGroupId: upperPrimary.id },
+    { name: 'P.5',      levelOrder: 8, sectionId: upper.id, subGroupId: upperPrimary.id },
+    { name: 'P.6',      levelOrder: 9, sectionId: upper.id, subGroupId: upperPrimary.id },
+    { name: 'P.7',      levelOrder: 10, sectionId: upper.id, subGroupId: upperPrimary.id },
   ];
 
   const classes: Record<string, string> = {};
   for (const def of classDefs) {
-    // Unique by name within a school section
-    const existing = await prisma.class.findFirst({
-      where: { name: def.name, schoolSectionId: def.sectionId },
-    });
-    const cls = existing ?? await prisma.class.create({
-      data: { name: def.name, levelOrder: def.levelOrder, schoolSectionId: def.sectionId },
-    });
+    const existing = await prisma.class.findFirst({ where: { name: def.name } });
+    const cls = existing
+      ? await prisma.class.update({
+          where: { id: existing.id },
+          data: { levelOrder: def.levelOrder, schoolSectionId: def.sectionId, classSubGroupId: def.subGroupId },
+        })
+      : await prisma.class.create({
+          data: {
+            name: def.name,
+            levelOrder: def.levelOrder,
+            schoolSectionId: def.sectionId,
+            classSubGroupId: def.subGroupId,
+          },
+        });
     classes[def.name] = cls.id;
   }
 
   // ── Streams (one default stream per class for the current year) ─
   const streamDefs = [
-    { className: 'Nursery', name: 'Nursery' },
-    { className: 'P.1',     name: 'P.1A' },
-    { className: 'P.2',     name: 'P.2A' },
-    { className: 'P.3',     name: 'P.3A' },
-    { className: 'P.4',     name: 'P.4A' },
-    { className: 'P.5',     name: 'P.5A' },
-    { className: 'P.6',     name: 'P.6A' },
-    { className: 'P.7',     name: 'P.7A' },
+    { className: 'Baby',     name: 'Baby' },
+    { className: 'Day Care', name: 'Day Care' },
+    { className: 'Middle',   name: 'Middle' },
+    { className: 'Top',      name: 'Top' },
+    { className: 'P.1',      name: 'P.1A' },
+    { className: 'P.2',      name: 'P.2A' },
+    { className: 'P.3',      name: 'P.3A' },
+    { className: 'P.4',      name: 'P.4A' },
+    { className: 'P.5',      name: 'P.5A' },
+    { className: 'P.6',      name: 'P.6A' },
+    { className: 'P.7',      name: 'P.7A' },
   ];
 
   for (const def of streamDefs) {
@@ -350,8 +406,8 @@ async function seedAcademicStructure() {
   }
 
   console.log('✓  Academic year 2026 seeded (current)');
-  console.log('✓  8 classes seeded (Nursery + P.1–P.7)');
-  console.log('✓  8 default streams seeded (one per class)');
+  console.log('✓  11 classes seeded/updated (Baby, Day Care, Middle, Top + P.1–P.7) — all linked to sub-groups');
+  console.log('✓  11 default streams seeded (one per class)');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -391,7 +447,8 @@ async function main() {
   await seedAssessmentTypes();
   await seedReportCardSettings();
   await seedAdminUser();
-  await seedAcademicStructure();
+  const subGroups = await seedClassHierarchy();
+  await seedAcademicStructure(subGroups);
   await seedHouses();
 
   console.log('─────────────────────────────────────────────────────');

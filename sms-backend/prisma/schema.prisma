@@ -208,6 +208,37 @@ model Term {
   @@map("terms")
 }
 
+/// Top-level class grouping: Kindergarten, Primary
+model ClassGroup {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String   @unique @db.VarChar(80)
+  displayOrder Int      @db.SmallInt
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(6)
+
+  classSubGroups ClassSubGroup[]
+
+  @@map("class_groups")
+}
+
+/// Mid-level class grouping: PrePrimary, LowerPrimary, UpperPrimary
+model ClassSubGroup {
+  id           String   @id @default(uuid()) @db.Uuid
+  classGroupId String   @db.Uuid
+  name         String   @db.VarChar(80)
+  displayOrder Int      @db.SmallInt
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(6)
+
+  classGroup ClassGroup @relation(fields: [classGroupId], references: [id])
+  classes    Class[]
+
+  @@unique([classGroupId, name])
+  @@map("class_sub_groups")
+}
+
 /// Upper Primary (P.4–P.7, ranked by aggregate) vs Lower Primary (P.1–P.3, ranked by average)
 model SchoolSection {
   id                 String   @id @default(uuid()) @db.Uuid
@@ -225,15 +256,17 @@ model SchoolSection {
 }
 
 model Class {
-  id              String   @id @default(uuid()) @db.Uuid
-  schoolSectionId String   @db.Uuid
-  name            String   @db.VarChar(40)
-  levelOrder      Int      @db.SmallInt
-  isActive        Boolean  @default(true)
+  id              String  @id @default(uuid()) @db.Uuid
+  schoolSectionId String  @db.Uuid
+  classSubGroupId String? @db.Uuid
+  name            String  @db.VarChar(40)
+  levelOrder      Int     @db.SmallInt
+  isActive        Boolean @default(true)
   createdAt       DateTime @default(now()) @db.Timestamptz(6)
   updatedAt       DateTime @updatedAt @db.Timestamptz(6)
 
-  schoolSection SchoolSection @relation(fields: [schoolSectionId], references: [id])
+  schoolSection SchoolSection  @relation(fields: [schoolSectionId], references: [id])
+  classSubGroup ClassSubGroup? @relation(fields: [classSubGroupId], references: [id])
 
   streams                 Stream[]
   classSubjectAssignments ClassSubjectAssignment[]
