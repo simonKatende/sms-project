@@ -43,10 +43,12 @@ storage/        → Generated files (photos, PDFs) — gitignored
 
 ## Class Hierarchy (THREE LEVELS — all configurable in settings)
 Class Group → Sub Group → Class
-Kindergarten → PrePrimary → Day Care, KG.1, KG.1, KG.3
-Primary → LowerPrimary → P.1, P.2, P.3 
-Primary → UpperPrimary → P.4, P.5, P.6, P.7
+Kindergarten → PrePrimary → Baby, Day Care, Middle, Top
+Primary → LowerPrimary → P.1, P.2, P.3, P.4
+Primary → UpperPrimary → P.5, P.6, P.7
 DB tables: class_groups → class_sub_groups → classes
+classes.classSubGroupId FK → class_sub_groups.id (ADDED — Sprint 2 migration)
+classes.schoolSectionId FK → school_sections.id (KEPT — still needed for grading rules)
 
 ## Fee Grouping (for tuition rates)
 - Nursery (all PrePrimary classes): one rate group
@@ -54,11 +56,11 @@ DB tables: class_groups → class_sub_groups → classes
 - P.7: its own rate group
 - Day and Boarding rates differ for all three groups
 - Fee structures are configured PER ACADEMIC YEAR (not per term)
-- fee_structures.academic_year_id FK (NOT term_id)
+- fee_structures.academic_year_id FK → academic_years.id (NOT term_id)
 
 ---
 
-## Parent / Guardian Model (THREE LEVELS — AAN-002 redesign)
+## Parent / Guardian Model (THREE LEVELS — AAN-002 redesign) ✅ COMPLETE
 Each pupil has THREE contact records:
 1. Mother (optional): full_name, phone, email, address, NIN → pupil_parents (parent_type='mother')
 2. Father (optional): full_name, phone, email, address, NIN → pupil_parents (parent_type='father')
@@ -86,7 +88,7 @@ NULL score = absent (not zero). Zero = sat and scored zero. THESE ARE DIFFERENT.
 Upper Primary (P.4-P.7): ranked by aggregate ASC (lower=better)
 Lower Primary (P.1-P.3): ranked by average score DESC (higher=better)
 
-### Auto-Comments (AAN-002 — NEW)
+### Auto-Comments (AAN-002)
 Grade remarks: admin configures up to 5 remark options per grade band (D1-F9)
   → stored in grade_remarks table (grade_remarks.remark_number: 1-5)
   → remark_number 1 auto-selected on report card per subject
@@ -96,20 +98,31 @@ Grade remarks: admin configures up to 5 remark options per grade band (D1-F9)
 Division comments: admin configures up to 5 Class Teacher + 5 Headteacher options per division
   → stored in division_remarks table (comment_role: 'class_teacher' or 'headteacher')
   → option_number 1 auto-selected; DOS/HT can change via dropdown
+  → auto-comment lookup MUST use the FINAL division (after F9 penalty), not raw division
 
 ### Fees & Bursary
-- Fees configured PER ACADEMIC YEAR in system settings
+- Fees configured PER ACADEMIC YEAR (fee_structures.academic_year_id FK)
 - Bursary: agreed_net_fees_ugx is the anchor (preserved on structure_update)
-- structure_update: recalculate discount to preserve net fees
-- general_increment: affect ALL pupils including bursary, no recalculation
+- structure_update: recalculate discount to preserve net fees for bursary pupils
+- general_increment: affects ALL pupils including bursary (no protection)
 - Bulk billing: auto-computes from class + section + bursary data
 
-### Fees Invoices (AAN-002 — updated)
-Invoice workflow: Bill → Generate invoice → Export/Print → Activate when new term is set
+### Fee Categories (pre-seeded — Sprint 3)
+Standard categories to seed at deployment:
+  Tuition       (code: TUI,  isTuition: true)
+  Transport     (code: TRP,  isTuition: false)
+  UNEB Reg.     (code: UNEB, isTuition: false)
+  Admission     (code: ADM,  isTuition: false)
+  Books         (code: BKS,  isTuition: false)
+  Uniform       (code: UNI,  isTuition: false)
+  Art Materials (code: ART,  isTuition: false)
+
+### Fees Invoices (AAN-002)
+Invoice workflow: Bill → Generate invoice → Export/Print
 Generation modes: Pupil Wise, Class Wise, Family Wise
 Invoice format: A5 size. 2 per A4 page. One copy per pupil.
-Invoice contains: school header, pupil info (ID, name, Guardian's name, class, section),
-fee lines table, previous term arrears, total due,
+Invoice contains: school header, pupil info (ID, name, class, section),
+fee lines table, bursary discount line, previous term arrears, total due,
 SchoolPay code box (prominent), Mobile Money number for additional fees,
 fine after due date (if configured).
 NO bank details. NO multiple copies.
@@ -119,7 +132,8 @@ NO bank details. NO multiple copies.
 - Use contact_person.primary_phone for SMS and calls by default
 - whatsapp_indicator determines which phone for WhatsApp (future)
 - WhatsApp deferred to future release
-- Delivery status: poll every 5 min (node-cron)
+- EgoSMS delivery status: poll every 5 min during school hours (node-cron)
+- SchoolPay payments: poll every 30 min Mon–Fri 7am–6pm (node-cron: "*/30 7-18 * * 1-5")
 - Phone numbers: normalise to +256XXXXXXXXX before every EgoSMS call
 
 ### Report Cards
@@ -127,24 +141,28 @@ NO bank details. NO multiple copies.
 - Class teachers: enter scores only
 - Format: BOT/MOT/EOT columns, teacher initials per subject, grade guide at bottom
 - Grade remarks: auto-selected from grade_remarks, changeable via dropdown or manual fill
-- Head teacher and Class teacher comments: auto-selected from division_remarks, changeable via dropdown or manual fill
+- Head teacher and Class teacher comments: auto-selected from division_remarks, changeable via dropdown
 - Pupil photo top-right, SchoolPay code on card
 - School requirements section per term per class (configurable in report settings)
 
-### Houses (AAN-002 — NEW)
+### Houses (AAN-002) ✅ COMPLETE
 - Configurable in system settings → houses table
 - NOT hardcoded
-- Dropdown on pupil registration form
-- pupils.house_id FK → houses.id (nullable)
+- Dropdown on pupil registration form (populated from GET /api/v1/admin/houses/active)
+- pupils.houseId FK → houses.id (nullable)
+- Default houses seeded: Yellow (#F59E0B), Red (#EF4444), Blue (#3B82F6), Green (#10B981)
 
-### Institution Profile (AAN-002 — NEW)
-Configured in system settings → school_settings table additions:
-logo_path, website, secondary_phone, mobile_money_mtn, mobile_money_airtel,
-mobile_money_account_name
+### Institution Profile (AAN-002) ✅ COMPLETE
+Configured in system settings → school_settings table
+Fields: schoolName, schoolMotto, addressLine1, addressLine2, phonePrimary, phoneSecondary,
+email, website, logoPath, mobileMoneyMtn, mobileMoneyAirtel, mobileMoneyAccountName,
+invoiceFineAfterDueDate, stampNotice, reportFooterMotto, gradeGuideText
+API: GET/PUT /api/v1/admin/settings/profile (multipart/form-data for logo upload)
+Logo served as static file: GET /storage/logos/:filename
 
 ---
 
-## Academics Module — 8-Step Guided Workflow (AAN-002 — NEW)
+## Academics Module — 8-Step Guided Workflow (AAN-002)
 Visual stepper at top of Academics module. Tracks per-term in term_workflow_steps table.
 Step 1: Setup Subjects
 Step 2: Register Pupils for Subjects
@@ -180,7 +198,7 @@ Phone format: +256XXXXXXXXX always
 
 ---
 
-## UI Design Direction (AAN-002-12)
+## UI Design Direction (AAN-002)
 MVP prototype (March 2026) = visual benchmark. Match it.
 Keep: ribbon-style tabs per module, dense data grids, context action bars, modals, navy sidebar
 Improve: flat design, visual hierarchy, colour-as-meaning, responsive, 12px min table font
@@ -204,14 +222,14 @@ Components:
 
 ### 1. Testing — MANDATORY after every service
 After building ANY service file, ALWAYS write a Jest unit test immediately.
-Location: sms-backend/tests/unit/[ServiceName].test.js
-Mock all Prisma calls with jest.mock(). Mock all external adapters.
+Location: sms-backend/src/__tests__/services/[ServiceName].test.js
+Mock all Prisma calls. Mock all external adapters.
 Cover: (a) happy path (b) validation errors (c) edge cases (d) error handling
-Run: npx jest tests/unit/[ServiceName].test.js — ALL must pass before moving on.
+Run: npx jest src/__tests__/services/[ServiceName].test.js — ALL must pass before moving on.
 
 ### 2. Testing — After every API controller
-Integration test: sms-backend/tests/integration/[resource].test.js
-Use supertest. Test: 200/201, 400, 401, 403, 404.
+Integration test: sms-backend/src/__tests__/controllers/[ResourceName].test.js
+Use supertest. Test: 200/201, 400, 401, 403, 404, 422.
 
 ### 3. Code quality
 async/await only. try/catch on all async. next(err) for errors.
@@ -223,7 +241,7 @@ git add . && git commit -m "feat: [description]"
 Prefixes: feat: fix: chore: test: refactor:
 
 ### 5. Prisma
-Use shared client from src/utils/prisma.js always.
+Use shared client from src/lib/prisma.js always. (NOT src/utils/prisma.js)
 Multi-step operations: prisma.$transaction([...])
 No raw SQL. After schema change: npx prisma migrate dev && npx prisma generate
 
@@ -242,28 +260,65 @@ Complete one task fully (code + tests + commit) before starting the next.
 Services: PascalCase — PupilService.js
 Controllers: PascalCase — PupilController.js
 Routes: camelCase — pupilRoutes.js
-Tests: match source — PupilService.test.js
+Tests: match source file name — PupilService.test.js, PupilController.test.js
 Adapters: PascalCase — EgoSMSAdapter.js
 
-## Test Template
-const Service = require('../../src/services/Service');
-jest.mock('../../src/utils/prisma', () => ({ model: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), findMany: jest.fn() } }));
-describe('Service', () => {
-  beforeEach(() => { jest.clearAllMocks(); });
-  describe('method', () => {
-    it('should [behaviour] when [condition]', async () => {
-      // Arrange / Act / Assert
+## Test Template (ESM — project uses ES modules)
+```js
+import { jest, describe, test, expect, beforeAll, beforeEach } from '@jest/globals';
+
+// Mock registrations MUST come before all imports
+jest.unstable_mockModule('../../lib/prisma.js', () => ({
+  prisma: {
+    modelName: {
+      findUnique: jest.fn(),
+      findFirst:  jest.fn(),
+      findMany:   jest.fn(),
+      create:     jest.fn(),
+      update:     jest.fn(),
+      delete:     jest.fn(),
+    },
+  },
+}));
+
+let ServiceUnderTest;
+let prismaModule;
+
+beforeAll(async () => {
+  prismaModule      = await import('../../lib/prisma.js');
+  ServiceUnderTest  = await import('../../services/ServiceUnderTest.js');
+});
+
+beforeEach(() => {
+  jest.clearAllMocks();
+});
+
+describe('ServiceUnderTest', () => {
+  describe('methodName', () => {
+    test('should [behaviour] when [condition]', async () => {
+      // Arrange
+      prismaModule.prisma.modelName.findUnique.mockResolvedValue({ id: 'uuid', ... });
+      // Act
+      const result = await ServiceUnderTest.methodName(args);
+      // Assert
+      expect(result).toEqual(expect.objectContaining({ ... }));
     });
   });
 });
+```
 
 ---
 
 ## Sprint Plan
-Sprint 0 (Weeks 1-2): Environment setup, schema, seed ✅ COMPLETE
-Sprint 1 (Weeks 3-4): Auth + Pupil management ✅ COMPLETE
-Sprint 2 (Weeks 5-6): Sprint 1 back-fill (guardian model) + School configuration
-Sprint 3 (Weeks 7-8): Fees module (fee structure per year, invoice A5 PDF)
+Sprint 0 (Weeks 1-2):  Environment setup, schema, seed ✅ COMPLETE
+Sprint 1 (Weeks 3-4):  Auth + Pupil management ✅ COMPLETE
+Sprint 1 back-fill:    Guardian model (3-level) ✅ COMPLETE
+Sprint 2 (Weeks 5-6):  School configuration 🔄 IN PROGRESS
+  ✅ Done: Houses API + frontend, Institution Profile API + frontend
+  ⏳ Remaining: Class hierarchy (3-level), Academic calendar write endpoints,
+                User management, Subjects, Grading scale, Assessment types,
+                Report card settings, All remaining frontend settings screens
+Sprint 3 (Weeks 7-8):  Fees module (fee structure per year, A5 invoices, SchoolPay)
 Sprint 4 (Weeks 9-10): Academics (8-step workflow, scores, grading engine, auto-comments, report cards)
 Sprint 5 (Weeks 11-12): Communication (EgoSMS, follow-up queue)
 Sprint 6 (Weeks 13-14): Data migration + testing + hardening
@@ -279,5 +334,4 @@ Future: WhatsApp (adapter only — no schema/UI changes needed)
 /docs/SMS_Architecture_Amendment_AAN002.md
 
 ## Current Sprint
-Sprint 2 — School Configuration
-
+Sprint 2 — School Configuration (remaining work: see Sprint Plan above)
