@@ -1,13 +1,17 @@
 /**
- * PupilService unit tests
+ * PupilService unit tests — 3-level guardian model (AAN-002 redesign)
  *
- * All external dependencies (PupilRepository, photo adapter, Prisma) are mocked
- * so these tests exercise the business logic in isolation.
+ * Covers:
+ *   - Pupil ID generation
+ *   - Contact person family linking
+ *   - Mother / father optional parent records
+ *   - Contact person required validation
+ *   - Bursary validation
+ *   - Photo handling
+ *   - Audit log
  *
  * ESM note: In ESM mode (--experimental-vm-modules) Jest does not inject the
  * `jest` object as a global — it must be imported from @jest/globals.
- * Static imports are resolved before the module body runs, so jest is available
- * when jest.unstable_mockModule() is called in the module body below.
  */
 
 import { jest, describe, test, expect, beforeAll, beforeEach } from '@jest/globals';
@@ -15,10 +19,10 @@ import { jest, describe, test, expect, beforeAll, beforeEach } from '@jest/globa
 // ── Mock registrations (must come before all await imports) ───
 
 jest.unstable_mockModule('../../repositories/PupilRepository.js', () => ({
-  generatePupilIdCode:      jest.fn(),
-  findGuardianByPhone:      jest.fn(),
-  createPupilTransaction:   jest.fn(),
-  findBursarySchemeByName:  jest.fn(),
+  generatePupilIdCode:        jest.fn(),
+  findContactPersonByPhone:   jest.fn(),
+  createPupilTransaction:     jest.fn(),
+  findBursarySchemeByName:    jest.fn(),
 }));
 
 jest.unstable_mockModule('../../integrations/photo.js', () => ({
@@ -37,16 +41,16 @@ jest.unstable_mockModule('../../lib/prisma.js', () => ({
 // ── Module variables (populated in beforeAll) ─────────────────
 
 let registerPupil;
-let Repo;        // PupilRepository module
-let Photo;       // photo integration module
+let Repo;
+let Photo;
 let prismaModule;
 
 // ── Shared fixtures ───────────────────────────────────────────
 
-const PUPIL_ID    = 'pupil-uuid-abc123';
-const GUARDIAN_ID = 'guardian-uuid-def456';
-const SCHEME_ID   = 'scheme-uuid-ghi789';
-const CREATED_BY  = 'admin-uuid-xyz';
+const PUPIL_ID         = 'pupil-uuid-abc123';
+const CONTACT_PERSON_ID = 'cp-uuid-def456';
+const SCHEME_ID        = 'scheme-uuid-ghi789';
+const CREATED_BY       = 'admin-uuid-xyz';
 
 const basePupilFields = {
   firstName:    'Jane',
@@ -57,10 +61,14 @@ const basePupilFields = {
   enrolmentDate: '2026-01-15',
 };
 
-const baseGuardianFields = {
-  fullName:     'Sarah Nakato',
-  relationship: 'Mother',
-  phoneCall:    '+256772123456',
+const baseContactPerson = {
+  fullName:          'Sarah Nakato',
+  relationship:      'Mother',
+  primaryPhone:      '+256772123456',
+  secondaryPhone:    null,
+  whatsappIndicator: 'primary',
+  email:             null,
+  physicalAddress:   null,
 };
 
 /** Minimal pupil record returned by createPupilTransaction */
@@ -71,15 +79,16 @@ const mockPupil = {
   lastName:    'Nakato',
   section:     'Day',
   stream:      null,
-  pupilGuardians: [{
+  pupilParents:        [],
+  pupilContactPersons: [{
     id:              'junc-uuid',
-    guardianId:      GUARDIAN_ID,
-    isPrimaryContact: true,
-    guardian: {
-      id:           GUARDIAN_ID,
+    contactPersonId: CONTACT_PERSON_ID,
+    isPrimary:       true,
+    contactPerson: {
+      id:           CONTACT_PERSON_ID,
       fullName:     'Sarah Nakato',
       relationship: 'Mother',
-      phoneCall:    '+256772123456',
+      primaryPhone: '+256772123456',
     },
   }],
   pupilBursaries: [],
@@ -104,9 +113,8 @@ beforeAll(async () => {
 beforeEach(() => {
   jest.clearAllMocks();
 
-  // Default happy-path mock returns
   Repo.generatePupilIdCode.mockResolvedValue('HPS-2026-0001');
-  Repo.findGuardianByPhone.mockResolvedValue(null);            // no existing guardian
+  Repo.findContactPersonByPhone.mockResolvedValue(null);  // no existing contact person
   Repo.createPupilTransaction.mockResolvedValue(mockPupil);
   Repo.findBursarySchemeByName.mockResolvedValue(null);
 
@@ -119,12 +127,14 @@ beforeEach(() => {
 
 function makeParams(overrides = {}) {
   return {
-    pupilFields:    basePupilFields,
-    guardianFields: baseGuardianFields,
-    bursaryFields:  null,
-    photoFile:      null,
-    createdById:    CREATED_BY,
-    ipAddress:      '127.0.0.1',
+    pupilFields:   basePupilFields,
+    mother:        null,
+    father:        null,
+    contactPerson: baseContactPerson,
+    bursaryFields: null,
+    photoFile:     null,
+    createdById:   CREATED_BY,
+    ipAddress:     '127.0.0.1',
     ...overrides,
   };
 }
@@ -139,7 +149,7 @@ describe('PupilService.registerPupil', () => {
     test('calls generatePupilIdCode and uses result', async () => {
       Repo.generatePupilIdCode.mockResolvedValue('HPS-2026-0042');
 
-      const pupil = await registerPupil(makeParams());
+      await registerPupil(makeParams());
 
       expect(Repo.generatePupilIdCode).toHaveBeenCalledTimes(1);
       expect(Repo.createPupilTransaction).toHaveBeenCalledWith(
@@ -155,46 +165,133 @@ describe('PupilService.registerPupil', () => {
     });
   });
 
-  // ── Guardian deduplication ───────────────────────────────
+  // ── Contact person family linking ────────────────────────
 
-  describe('guardian handling', () => {
-    test('looks up guardian by phone number', async () => {
+  describe('contact person / family linking', () => {
+    test('looks up contact person by primary phone', async () => {
       await registerPupil(makeParams());
-      expect(Repo.findGuardianByPhone).toHaveBeenCalledWith('+256772123456');
+      expect(Repo.findContactPersonByPhone).toHaveBeenCalledWith('+256772123456');
     });
 
-    test('passes null existingGuardianId and full guardianData when phone not found', async () => {
-      Repo.findGuardianByPhone.mockResolvedValue(null);
+    test('passes null existingContactPersonId and full contactPersonData when phone not found', async () => {
+      Repo.findContactPersonByPhone.mockResolvedValue(null);
 
       await registerPupil(makeParams());
 
       expect(Repo.createPupilTransaction).toHaveBeenCalledWith(
         expect.objectContaining({
-          existingGuardianId: null,
-          guardianData: expect.objectContaining({
+          existingContactPersonId: null,
+          contactPersonData: expect.objectContaining({
             fullName:     'Sarah Nakato',
             relationship: 'Mother',
-            phoneCall:    '+256772123456',
+            primaryPhone: '+256772123456',
           }),
         }),
       );
     });
 
-    test('passes existingGuardianId and null guardianData when phone matches', async () => {
-      Repo.findGuardianByPhone.mockResolvedValue({ id: GUARDIAN_ID, fullName: 'Sarah Nakato' });
+    test('passes existingContactPersonId and null contactPersonData when phone matches (family link)', async () => {
+      Repo.findContactPersonByPhone.mockResolvedValue({ id: CONTACT_PERSON_ID, fullName: 'Sarah Nakato' });
 
       await registerPupil(makeParams());
 
       expect(Repo.createPupilTransaction).toHaveBeenCalledWith(
         expect.objectContaining({
-          existingGuardianId: GUARDIAN_ID,
-          guardianData:       null,
+          existingContactPersonId: CONTACT_PERSON_ID,
+          contactPersonData:       null,
+        }),
+      );
+    });
+
+    test('second pupil with same primary phone links to existing contact person record', async () => {
+      // First pupil — no existing contact person
+      Repo.findContactPersonByPhone.mockResolvedValue(null);
+      await registerPupil(makeParams());
+
+      // Second pupil — contact person already exists
+      Repo.findContactPersonByPhone.mockResolvedValue({ id: CONTACT_PERSON_ID });
+      jest.clearAllMocks();
+      Repo.generatePupilIdCode.mockResolvedValue('HPS-2026-0002');
+      Repo.findContactPersonByPhone.mockResolvedValue({ id: CONTACT_PERSON_ID });
+      Repo.createPupilTransaction.mockResolvedValue({ ...mockPupil, id: 'pupil-uuid-second', pupilIdCode: 'HPS-2026-0002' });
+      prismaModule.prisma.auditLog.create.mockResolvedValue({});
+
+      await registerPupil(makeParams({ pupilFields: { ...basePupilFields, firstName: 'John' } }));
+
+      expect(Repo.createPupilTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          existingContactPersonId: CONTACT_PERSON_ID,
+          contactPersonData:       null,
         }),
       );
     });
   });
 
-  // ── Transaction call ─────────────────────────────────────
+  // ── Mother / father optional parents ─────────────────────
+
+  describe('optional mother and father', () => {
+    test('creates pupil with contact person only (no mother or father)', async () => {
+      await registerPupil(makeParams({ mother: null, father: null }));
+
+      expect(Repo.createPupilTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          motherData: null,
+          fatherData: null,
+        }),
+      );
+    });
+
+    test('passes motherData when mother fullName is provided', async () => {
+      const mother = { fullName: 'Mary Nakato', phone: '+256701111111', email: null, address: null, nin: null };
+
+      await registerPupil(makeParams({ mother }));
+
+      expect(Repo.createPupilTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          motherData: expect.objectContaining({ fullName: 'Mary Nakato', phone: '+256701111111' }),
+          fatherData: null,
+        }),
+      );
+    });
+
+    test('passes fatherData when father fullName is provided', async () => {
+      const father = { fullName: 'John Nakato', phone: '+256702222222', email: null, address: null, nin: null };
+
+      await registerPupil(makeParams({ father }));
+
+      expect(Repo.createPupilTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          motherData: null,
+          fatherData: expect.objectContaining({ fullName: 'John Nakato' }),
+        }),
+      );
+    });
+
+    test('passes both motherData and fatherData when both provided', async () => {
+      const mother = { fullName: 'Mary Nakato', phone: null, email: null, address: null, nin: null };
+      const father = { fullName: 'John Nakato', phone: null, email: null, address: null, nin: null };
+
+      await registerPupil(makeParams({ mother, father }));
+
+      expect(Repo.createPupilTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          motherData: expect.objectContaining({ fullName: 'Mary Nakato' }),
+          fatherData: expect.objectContaining({ fullName: 'John Nakato' }),
+        }),
+      );
+    });
+
+    test('omits motherData when mother has no fullName', async () => {
+      // mother object present but fullName empty/null
+      await registerPupil(makeParams({ mother: { fullName: null, phone: null, email: null, address: null, nin: null } }));
+
+      expect(Repo.createPupilTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({ motherData: null }),
+      );
+    });
+  });
+
+  // ── Transaction data shape ───────────────────────────────
 
   describe('transaction data shape', () => {
     test('passes correct pupil core fields', async () => {
@@ -251,7 +348,7 @@ describe('PupilService.registerPupil', () => {
       await registerPupil(makeParams({ bursaryFields }));
 
       const { bursaryData } = Repo.createPupilTransaction.mock.calls[0][0];
-      expect(bursaryData.agreedNetFeesUgx).toBe(400000); // 600000 - 200000
+      expect(bursaryData.agreedNetFeesUgx).toBe(400000);
       expect(bursaryData.standardFeesAtAward).toBe(600000);
       expect(bursaryData.discountUgx).toBe(200000);
       expect(bursaryData.bursarySchemeId).toBe(SCHEME_ID);
@@ -280,7 +377,7 @@ describe('PupilService.registerPupil', () => {
 
       await expect(registerPupil(makeParams({ bursaryFields }))).rejects.toMatchObject({
         status:  422,
-        message: expect.stringContaining("Government Bursary"),
+        message: expect.stringContaining('Government Bursary'),
       });
     });
 
@@ -294,7 +391,7 @@ describe('PupilService.registerPupil', () => {
       ).rejects.toMatchObject({ status: 422, message: expect.stringContaining('agreedNetFeesUgx') });
     });
 
-    test('throws 422 when discount exceeds standard fees (agreedNetFeesUgx < 0)', async () => {
+    test('throws 422 when discount exceeds standard fees', async () => {
       Repo.findBursarySchemeByName.mockResolvedValue({ id: SCHEME_ID });
 
       await expect(
@@ -362,9 +459,7 @@ describe('PupilService.registerPupil', () => {
 
       const result = await registerPupil(makeParams({ photoFile: mockFile }));
 
-      // Pupil is still returned (from the transaction result, before photo step)
       expect(result.id).toBe(PUPIL_ID);
-      // DB photo record was never created
       expect(prismaModule.prisma.pupilPhoto.create).not.toHaveBeenCalled();
     });
   });

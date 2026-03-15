@@ -425,16 +425,17 @@ model Pupil {
   stream    Stream? @relation(fields: [streamId], references: [id])
   createdBy User?   @relation(fields: [createdById], references: [id])
 
-  pupilGuardians    PupilGuardian[]
-  pupilPhoto        PupilPhoto?
-  pupilBursaries    PupilBursary[]
-  pupilBills        PupilBill[]
-  feeStatements     FeeStatement[]
-  pupilScores       PupilScore[]
-  pupilTermResults  PupilTermResult[]
-  reportCards       ReportCard[]
-  communicationLogs CommunicationLog[]
-  demandNotes       DemandNote[]
+  pupilParents         PupilParent[]
+  pupilContactPersons  PupilContactPerson[]
+  pupilPhoto           PupilPhoto?
+  pupilBursaries       PupilBursary[]
+  pupilBills           PupilBill[]
+  feeStatements        FeeStatement[]
+  pupilScores          PupilScore[]
+  pupilTermResults     PupilTermResult[]
+  reportCards          ReportCard[]
+  communicationLogs    CommunicationLog[]
+  demandNotes          DemandNote[]
 
   @@index([pupilIdCode])
   @@index([lin])
@@ -444,41 +445,60 @@ model Pupil {
   @@map("pupils")
 }
 
-/// One guardian can be linked to multiple siblings via PupilGuardian
-model Guardian {
-  id              String    @id @default(uuid()) @db.Uuid
-  fullName        String    @db.VarChar(150)
-  relationship    String    @db.VarChar(60)
-  phoneCall       String    @db.VarChar(30)
-  phoneWhatsapp   String?   @db.VarChar(30)
-  email           String?   @db.VarChar(200)
-  physicalAddress String?
-  occupation      String?   @db.VarChar(100)
-  isActive        Boolean   @default(true)
-  deletedAt       DateTime? @db.Timestamptz(6)
-  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime  @updatedAt @db.Timestamptz(6)
+/// Mother or father record for a pupil (optional; one row per parent_type per pupil)
+model PupilParent {
+  id         String   @id @default(uuid()) @db.Uuid
+  pupilId    String   @db.Uuid
+  parentType String   @db.VarChar(10)
+  fullName   String   @db.VarChar(150)
+  phone      String?  @db.VarChar(30)
+  email      String?  @db.VarChar(200)
+  address    String?
+  nin        String?  @db.VarChar(50)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(6)
 
-  pupilGuardians    PupilGuardian[]
-  communicationLogs CommunicationLog[]
+  pupil Pupil @relation(fields: [pupilId], references: [id], onDelete: Cascade)
 
-  @@map("guardians")
+  @@unique([pupilId, parentType])
+  @@map("pupil_parents")
 }
 
-/// Junction: pupil ↔ guardian; one guardian is flagged as primary contact
-model PupilGuardian {
-  id               String   @id @default(uuid()) @db.Uuid
-  pupilId          String   @db.Uuid
-  guardianId       String   @db.Uuid
-  isPrimaryContact Boolean  @default(false)
-  createdAt        DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt        DateTime @updatedAt @db.Timestamptz(6)
+/// Shared contact record — one person can be contact for multiple siblings (family linking)
+model ContactPerson {
+  id                String    @id @default(uuid()) @db.Uuid
+  fullName          String    @db.VarChar(150)
+  relationship      String    @db.VarChar(60)
+  primaryPhone      String    @db.VarChar(30)
+  secondaryPhone    String?   @db.VarChar(30)
+  whatsappIndicator String    @default("primary") @db.VarChar(10)
+  email             String?   @db.VarChar(200)
+  physicalAddress   String?
+  isActive          Boolean   @default(true)
+  deletedAt         DateTime? @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @db.Timestamptz(6)
 
-  pupil    Pupil    @relation(fields: [pupilId], references: [id], onDelete: Cascade)
-  guardian Guardian @relation(fields: [guardianId], references: [id], onDelete: Cascade)
+  pupilContactPersons PupilContactPerson[]
+  communicationLogs   CommunicationLog[]
 
-  @@unique([pupilId, guardianId])
-  @@map("pupil_guardians")
+  @@index([primaryPhone])
+  @@map("contact_persons")
+}
+
+/// Junction: pupil ↔ contact_person; supports family linking across siblings
+model PupilContactPerson {
+  id              String   @id @default(uuid()) @db.Uuid
+  pupilId         String   @db.Uuid
+  contactPersonId String   @db.Uuid
+  isPrimary       Boolean  @default(true)
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+
+  pupil         Pupil         @relation(fields: [pupilId], references: [id], onDelete: Cascade)
+  contactPerson ContactPerson @relation(fields: [contactPersonId], references: [id])
+
+  @@unique([pupilId, contactPersonId])
+  @@map("pupil_contact_persons")
 }
 
 /// Passport photo — separated to keep pupils table lightweight
@@ -890,7 +910,7 @@ model TermRequirement {
 model CommunicationLog {
   id               String    @id @default(uuid()) @db.Uuid
   pupilId          String    @db.Uuid
-  guardianId       String?   @db.Uuid
+  contactPersonId  String?   @db.Uuid
   channel          String    @db.VarChar(20)
   direction        String    @default("outbound") @db.VarChar(10)
   phoneNumberUsed  String?   @db.VarChar(30)
@@ -904,9 +924,9 @@ model CommunicationLog {
   createdAt        DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt        DateTime  @updatedAt @db.Timestamptz(6)
 
-  pupil       Pupil     @relation(fields: [pupilId], references: [id])
-  guardian    Guardian? @relation(fields: [guardianId], references: [id])
-  initiatedBy User?     @relation(fields: [initiatedById], references: [id])
+  pupil         Pupil          @relation(fields: [pupilId], references: [id])
+  contactPerson ContactPerson? @relation(fields: [contactPersonId], references: [id])
+  initiatedBy   User?          @relation(fields: [initiatedById], references: [id])
 
   demandNotes DemandNote[]
 

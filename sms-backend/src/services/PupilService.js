@@ -3,11 +3,12 @@
  *
  * Orchestrates:
  *   1. pupil ID code generation
- *   2. guardian deduplication (find by phone, create if new)
- *   3. bursary scheme validation
- *   4. photo processing (via PhotoAdapter)
- *   5. atomic DB transaction (via PupilRepository)
- *   6. audit log
+ *   2. contact person deduplication / family linking (find by primaryPhone, create if new)
+ *   3. optional mother / father parent records
+ *   4. bursary scheme validation
+ *   5. photo processing (via PhotoAdapter)
+ *   6. atomic DB transaction (via PupilRepository)
+ *   7. audit log
  */
 
 import * as XLSX from 'xlsx';
@@ -30,20 +31,27 @@ async function writeAudit({ userId, action, entityType, entityId, ipAddress, not
 // ── registerPupil ─────────────────────────────────────────────
 
 /**
- * Register a new pupil with guardian, optional bursary, and optional photo.
+ * Register a new pupil with three-level contact structure, optional bursary,
+ * and optional photo.
  *
- * @param {object} params
- * @param {object} params.pupilFields      — validated pupil form fields
- * @param {object} params.guardianFields   — validated guardian form fields
- * @param {object|null} params.bursaryFields — bursary fields (null = not a bursary pupil)
- * @param {object|null} params.photoFile   — multer file object (req.file) or null
- * @param {string} params.createdById      — authenticated user UUID
- * @param {string} [params.ipAddress]      — for audit log
+ * @param {object}      params
+ * @param {object}      params.pupilFields    — validated pupil form fields
+ * @param {object|null} params.mother         — { fullName, phone, email, address, nin } or null
+ * @param {object|null} params.father         — { fullName, phone, email, address, nin } or null
+ * @param {object}      params.contactPerson  — { fullName, relationship, primaryPhone,
+ *                                               secondaryPhone, whatsappIndicator, email,
+ *                                               physicalAddress } (required)
+ * @param {object|null} params.bursaryFields  — bursary fields (null = not a bursary pupil)
+ * @param {object|null} params.photoFile      — multer file object (req.file) or null
+ * @param {string}      params.createdById    — authenticated user UUID
+ * @param {string}      [params.ipAddress]    — for audit log
  * @returns {Promise<object>} full pupil record with relations
  */
 export async function registerPupil({
   pupilFields,
-  guardianFields,
+  mother,
+  father,
+  contactPerson,
   bursaryFields,
   photoFile,
   createdById,
@@ -52,9 +60,10 @@ export async function registerPupil({
   // ── 1. Generate pupil ID code ───────────────────────────────
   const pupilIdCode = await PupilRepository.generatePupilIdCode();
 
-  // ── 2. Guardian deduplication ───────────────────────────────
-  const existingGuardian = await PupilRepository.findGuardianByPhone(guardianFields.phoneCall);
-  const existingGuardianId = existingGuardian?.id ?? null;
+  // ── 2. Contact person family linking ────────────────────────
+  // If another pupil already shares this primary phone, reuse the record.
+  const existingCP = await PupilRepository.findContactPersonByPhone(contactPerson.primaryPhone);
+  const existingContactPersonId = existingCP?.id ?? null;
 
   // ── 3. Bursary scheme validation ────────────────────────────
   let bursaryData = null;
@@ -106,32 +115,47 @@ export async function registerPupil({
     createdById,
   };
 
-  // ── 5. Persist transaction (pupil + guardian + bursary) ─────
-  // Photo is NOT yet on disk — we handle that after, because we need
-  // the pupil UUID for the filename, and the transaction gives us that UUID.
-  // However, writing the file inside the transaction would hold the DB
-  // connection open during I/O. Instead: run the transaction first to get
-  // the pupil UUID, write the file, then update via a separate photo record.
-  // The transaction already handles pupilPhoto creation if photoData is passed.
+  // ── 5. Build parent data objects ────────────────────────────
+  const motherData = mother?.fullName ? {
+    fullName: mother.fullName,
+    phone:    mother.phone    ?? null,
+    email:    mother.email    ?? null,
+    address:  mother.address  ?? null,
+    nin:      mother.nin      ?? null,
+  } : null;
 
-  // Run transaction without photo first to get the pupilId
+  const fatherData = father?.fullName ? {
+    fullName: father.fullName,
+    phone:    father.phone    ?? null,
+    email:    father.email    ?? null,
+    address:  father.address  ?? null,
+    nin:      father.nin      ?? null,
+  } : null;
+
+  // ── 6. Build contact person data (only when creating a new one) ─
+  const contactPersonData = existingContactPersonId ? null : {
+    fullName:          contactPerson.fullName,
+    relationship:      contactPerson.relationship,
+    primaryPhone:      contactPerson.primaryPhone,
+    secondaryPhone:    contactPerson.secondaryPhone    ?? null,
+    whatsappIndicator: contactPerson.whatsappIndicator ?? 'primary',
+    email:             contactPerson.email             ?? null,
+    physicalAddress:   contactPerson.physicalAddress   ?? null,
+  };
+
+  // ── 7. Persist transaction ───────────────────────────────────
+  // Photo is NOT yet on disk — handled post-transaction (see step 8).
   const pupilRecord = await PupilRepository.createPupilTransaction({
     pupilData,
-    guardianData: existingGuardianId ? null : {
-      fullName:        guardianFields.fullName,
-      relationship:    guardianFields.relationship,
-      phoneCall:       guardianFields.phoneCall,
-      phoneWhatsapp:   guardianFields.phoneWhatsapp   ?? null,
-      email:           guardianFields.email            ?? null,
-      physicalAddress: guardianFields.physicalAddress  ?? null,
-      occupation:      guardianFields.occupation       ?? null,
-    },
+    motherData,
+    fatherData,
+    contactPersonData,
+    existingContactPersonId,
     bursaryData,
-    photoData: null,           // handled below after we have the pupil UUID
-    existingGuardianId,
+    photoData: null,  // handled below after we have the pupil UUID
   });
 
-  // ── 6. Photo processing (post-transaction) ──────────────────
+  // ── 8. Photo processing (post-transaction) ──────────────────
   let finalRecord = pupilRecord;
   if (photoFile) {
     try {
@@ -150,20 +174,20 @@ export async function registerPupil({
       finalRecord = await prisma.pupil.findUnique({
         where: { id: pupilRecord.id },
         include: {
-          stream:         { include: { class: true } },
-          pupilGuardians: { include: { guardian: true } },
-          pupilBursaries: { include: { bursaryScheme: true } },
-          pupilPhoto:     true,
+          stream:              { include: { class: true } },
+          pupilParents:        true,
+          pupilContactPersons: { include: { contactPerson: true } },
+          pupilBursaries:      { include: { bursaryScheme: true } },
+          pupilPhoto:          true,
         },
       });
     } catch (err) {
       // Photo failure is non-fatal — pupil is already registered.
-      // Log the error but return the record without the photo.
       console.error('[PupilService] Photo processing failed:', err.message);
     }
   }
 
-  // ── 7. Audit ────────────────────────────────────────────────
+  // ── 9. Audit ────────────────────────────────────────────────
   await writeAudit({
     userId:     createdById,
     action:     'PUPIL_CREATED',
@@ -206,10 +230,10 @@ export async function getPupilById(id) {
   const pupil = await PupilRepository.findPupilById(id);
   if (!pupil) throw Object.assign(new Error('Pupil not found'), { status: 404 });
 
-  const guardianIds = pupil.pupilGuardians.map(pg => pg.guardianId);
+  const contactPersonIds = pupil.pupilContactPersons.map(pcp => pcp.contactPersonId);
 
   const [siblings, latestResult, recentComms, currentTerm] = await Promise.all([
-    PupilRepository.findSiblings(id, guardianIds),
+    PupilRepository.findSiblings(id, contactPersonIds),
     prisma.pupilTermResult.findFirst({
       where:   { pupilId: id },
       orderBy: { createdAt: 'desc' },
@@ -219,7 +243,7 @@ export async function getPupilById(id) {
       where:   { pupilId: id },
       orderBy: { createdAt: 'desc' },
       take:    5,
-      include: { guardian: { select: { fullName: true } } },
+      include: { contactPerson: { select: { fullName: true } } },
     }),
     prisma.term.findFirst({ where: { isCurrent: true } }),
   ]);
@@ -236,8 +260,8 @@ export async function getPupilById(id) {
 }
 
 // ── getPupilFamily ────────────────────────────────────────────
-export async function getPupilFamily(guardianId) {
-  return PupilRepository.findPupilsByGuardian(guardianId);
+export async function getPupilFamily(contactPersonId) {
+  return PupilRepository.findPupilsByContactPerson(contactPersonId);
 }
 
 // ── exportPupils ──────────────────────────────────────────────
@@ -253,25 +277,24 @@ export async function exportPupils({ query }) {
   const pupils = await PupilRepository.findAllForExport({ filters });
 
   const rows = pupils.map(p => {
-    const primary = p.pupilGuardians[0]?.guardian ?? {};
+    const primaryCP = p.pupilContactPersons[0]?.contactPerson ?? {};
     return {
-      'Pupil ID':      p.pupilIdCode,
-      'First Name':    p.firstName,
-      'Last Name':     p.lastName,
-      'Class':         p.stream?.class?.name ?? '',
-      'Stream':        p.stream?.name ?? '',
-      'Section':       p.section,
-      'LIN':           p.lin ?? '',
+      'Pupil ID':       p.pupilIdCode,
+      'First Name':     p.firstName,
+      'Last Name':      p.lastName,
+      'Class':          p.stream?.class?.name ?? '',
+      'Stream':         p.stream?.name ?? '',
+      'Section':        p.section,
+      'LIN':            p.lin ?? '',
       'SchoolPay Code': p.schoolpayCode ?? '',
-      'Guardian Name': primary.fullName ?? '',
-      'Guardian Phone': primary.phoneCall ?? '',
-      'Bursary':       p.pupilBursaries.length > 0 ? 'Yes' : 'No',
+      'Contact Name':   primaryCP.fullName ?? '',
+      'Contact Phone':  primaryCP.primaryPhone ?? '',
+      'Bursary':        p.pupilBursaries.length > 0 ? 'Yes' : 'No',
     };
   });
 
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(rows);
-  // Set column widths
   ws['!cols'] = [14, 16, 16, 10, 12, 10, 14, 16, 24, 16, 8].map(w => ({ wch: w }));
   XLSX.utils.book_append_sheet(wb, ws, 'Pupils');
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
@@ -312,12 +335,12 @@ export async function deletePupil(id, { userId, ipAddress }) {
     notes: `Soft deleted: ${existing.firstName} ${existing.lastName} (${existing.pupilIdCode})` });
 }
 
-// ── guardianLookup ────────────────────────────────────────────
-export async function guardianLookup(phone) {
-  const guardian = await PupilRepository.findGuardianByPhone(phone);
-  return guardian
-    ? { exists: true,  guardian: { id: guardian.id, fullName: guardian.fullName,
-        relationship: guardian.relationship, phoneCall: guardian.phoneCall,
-        phoneWhatsapp: guardian.phoneWhatsapp } }
-    : { exists: false, guardian: null };
+// ── contactPersonLookup ───────────────────────────────────────
+export async function contactPersonLookup(phone) {
+  const cp = await PupilRepository.findContactPersonByPhone(phone);
+  return cp
+    ? { exists: true,  contactPerson: { id: cp.id, fullName: cp.fullName,
+        relationship: cp.relationship, primaryPhone: cp.primaryPhone,
+        secondaryPhone: cp.secondaryPhone, whatsappIndicator: cp.whatsappIndicator } }
+    : { exists: false, contactPerson: null };
 }

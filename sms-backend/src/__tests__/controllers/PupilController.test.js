@@ -12,8 +12,6 @@
  *
  * ESM note: In ESM mode (--experimental-vm-modules) Jest does not inject the
  * `jest` object as a global — it must be imported from @jest/globals.
- * Static imports are resolved before the module body runs, so jest is available
- * when jest.unstable_mockModule() is called in the module body below.
  */
 
 import { jest, describe, test, expect, beforeAll, beforeEach } from '@jest/globals';
@@ -25,8 +23,6 @@ process.env.NODE_ENV          = 'test';
 
 // ── Mock registrations ────────────────────────────────────────
 
-// Prisma is imported by rbac.js and AuthService at module load time.
-// A minimal stub prevents the real PG adapter from connecting.
 jest.unstable_mockModule('../../lib/prisma.js', () => ({
   prisma: {
     userRole:  { findFirst: jest.fn() },
@@ -36,15 +32,14 @@ jest.unstable_mockModule('../../lib/prisma.js', () => ({
   },
 }));
 
-// Mock the service — controller tests must not touch business logic
 jest.unstable_mockModule('../../services/PupilService.js', () => ({
   registerPupil: jest.fn(),
 }));
 
 // ── Module variables ──────────────────────────────────────────
 
-let request;    // supertest
-let app;        // Express app
+let request;
+let app;
 let PupilService;
 let jwt;
 
@@ -52,15 +47,15 @@ let jwt;
 
 /** Minimal valid request body — all required fields present */
 const validBody = {
-  firstName:    'Jane',
-  lastName:     'Nakato',
-  dateOfBirth:  '2018-03-10',
-  gender:       'Female',
-  section:      'Day',
-  guardian: {
+  firstName:   'Jane',
+  lastName:    'Nakato',
+  dateOfBirth: '2018-03-10',
+  gender:      'Female',
+  section:     'Day',
+  contactPerson: {
     fullName:     'Sarah Nakato',
     relationship: 'Mother',
-    phoneCall:    '+256772123456',
+    primaryPhone: '+256772123456',
   },
 };
 
@@ -73,10 +68,11 @@ const mockPupil = {
   gender:      'Female',
   section:     'Day',
   stream:      null,
-  pupilGuardians: [{
+  pupilParents:        [],
+  pupilContactPersons: [{
     id:              'junc-uuid',
-    isPrimaryContact: true,
-    guardian: { id: 'g-uuid', fullName: 'Sarah Nakato', phoneCall: '+256772123456' },
+    isPrimary:       true,
+    contactPerson: { id: 'cp-uuid', fullName: 'Sarah Nakato', primaryPhone: '+256772123456' },
   }],
   pupilBursaries: [],
   pupilPhoto:     null,
@@ -95,7 +91,6 @@ beforeAll(async () => {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  // Default: service returns the mock pupil
   PupilService.registerPupil.mockResolvedValue(mockPupil);
 });
 
@@ -117,10 +112,7 @@ describe('POST /api/v1/pupils', () => {
 
   describe('authentication', () => {
     test('returns 401 when Authorization header is absent', async () => {
-      const res = await request(app)
-        .post('/api/v1/pupils')
-        .send(validBody);
-
+      const res = await request(app).post('/api/v1/pupils').send(validBody);
       expect(res.status).toBe(401);
       expect(res.body.error).toBeDefined();
     });
@@ -130,7 +122,6 @@ describe('POST /api/v1/pupils', () => {
         .post('/api/v1/pupils')
         .set('Authorization', 'Bearer not.a.valid.jwt')
         .send(validBody);
-
       expect(res.status).toBe(401);
     });
 
@@ -140,12 +131,10 @@ describe('POST /api/v1/pupils', () => {
         'wrong-secret',
         { expiresIn: '1h' },
       );
-
       const res = await request(app)
         .post('/api/v1/pupils')
         .set('Authorization', `Bearer ${badToken}`)
         .send(validBody);
-
       expect(res.status).toBe(401);
     });
   });
@@ -158,7 +147,6 @@ describe('POST /api/v1/pupils', () => {
         .post('/api/v1/pupils')
         .set('Authorization', `Bearer ${makeToken('class_teacher')}`)
         .send(validBody);
-
       expect(res.status).toBe(403);
     });
 
@@ -167,7 +155,6 @@ describe('POST /api/v1/pupils', () => {
         .post('/api/v1/pupils')
         .set('Authorization', `Bearer ${makeToken('head_teacher')}`)
         .send(validBody);
-
       expect(res.status).toBe(403);
     });
 
@@ -176,7 +163,6 @@ describe('POST /api/v1/pupils', () => {
         .post('/api/v1/pupils')
         .set('Authorization', `Bearer ${makeToken('dos')}`)
         .send(validBody);
-
       expect(res.status).toBe(403);
     });
 
@@ -185,7 +171,6 @@ describe('POST /api/v1/pupils', () => {
         .post('/api/v1/pupils')
         .set('Authorization', `Bearer ${makeToken('system_admin')}`)
         .send(validBody);
-
       expect(res.status).toBe(201);
     });
 
@@ -194,7 +179,6 @@ describe('POST /api/v1/pupils', () => {
         .post('/api/v1/pupils')
         .set('Authorization', `Bearer ${makeToken('bursar')}`)
         .send(validBody);
-
       expect(res.status).toBe(201);
     });
   });
@@ -231,16 +215,41 @@ describe('POST /api/v1/pupils', () => {
       expect(pupilFields.house).toBe('Blue');
     });
 
-    test('passes guardian fields nested from body.guardian', async () => {
+    test('passes contactPerson fields from body.contactPerson', async () => {
       await request(app)
         .post('/api/v1/pupils')
         .set('Authorization', `Bearer ${adminToken()}`)
         .send(validBody);
 
-      const { guardianFields } = PupilService.registerPupil.mock.calls[0][0];
-      expect(guardianFields.fullName).toBe('Sarah Nakato');
-      expect(guardianFields.relationship).toBe('Mother');
-      expect(guardianFields.phoneCall).toBe('+256772123456');
+      const { contactPerson } = PupilService.registerPupil.mock.calls[0][0];
+      expect(contactPerson.fullName).toBe('Sarah Nakato');
+      expect(contactPerson.relationship).toBe('Mother');
+      expect(contactPerson.primaryPhone).toBe('+256772123456');
+    });
+
+    test('passes mother fields when provided', async () => {
+      const body = {
+        ...validBody,
+        mother: { fullName: 'Mary Nakato', phone: '+256701000001' },
+      };
+      await request(app)
+        .post('/api/v1/pupils')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send(body);
+
+      const { mother } = PupilService.registerPupil.mock.calls[0][0];
+      expect(mother).not.toBeNull();
+      expect(mother.fullName).toBe('Mary Nakato');
+    });
+
+    test('passes null mother when not provided', async () => {
+      await request(app)
+        .post('/api/v1/pupils')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send(validBody);
+
+      const { mother } = PupilService.registerPupil.mock.calls[0][0];
+      expect(mother).toBeNull();
     });
 
     test('passes authenticated user ID as createdById', async () => {
@@ -367,82 +376,75 @@ describe('POST /api/v1/pupils', () => {
       expect(res.body.errors.some(e => e.path === 'section')).toBe(true);
     });
 
-    // Guardian fields
-    test('returns 422 when guardian.fullName is missing', async () => {
-      const res = await postWith(without('guardian.fullName'));
+    // Contact person fields
+    test('returns 422 when contactPerson.fullName is missing', async () => {
+      const res = await postWith(without('contactPerson.fullName'));
       expect(res.status).toBe(422);
-      expect(res.body.errors.some(e => e.path === 'guardian.fullName')).toBe(true);
+      expect(res.body.errors.some(e => e.path === 'contactPerson.fullName')).toBe(true);
     });
 
-    test('returns 422 when guardian.relationship is missing', async () => {
-      const res = await postWith(without('guardian.relationship'));
+    test('returns 422 when contactPerson.relationship is missing', async () => {
+      const res = await postWith(without('contactPerson.relationship'));
       expect(res.status).toBe(422);
-      expect(res.body.errors.some(e => e.path === 'guardian.relationship')).toBe(true);
+      expect(res.body.errors.some(e => e.path === 'contactPerson.relationship')).toBe(true);
     });
 
-    test('returns 422 when guardian.phoneCall is missing', async () => {
-      const res = await postWith(without('guardian.phoneCall'));
+    test('returns 422 when contactPerson.primaryPhone is missing', async () => {
+      const res = await postWith(without('contactPerson.primaryPhone'));
       expect(res.status).toBe(422);
-      expect(res.body.errors.some(e => e.path === 'guardian.phoneCall')).toBe(true);
+      expect(res.body.errors.some(e => e.path === 'contactPerson.primaryPhone')).toBe(true);
     });
 
-    test('returns 422 when guardian.phoneCall is not +256 format', async () => {
-      const body = { ...validBody, guardian: { ...validBody.guardian, phoneCall: '0772123456' } };
+    test('returns 422 when contactPerson.primaryPhone is not +256 format', async () => {
+      const body = { ...validBody, contactPerson: { ...validBody.contactPerson, primaryPhone: '0772123456' } };
       const res  = await postWith(body);
       expect(res.status).toBe(422);
-      expect(res.body.errors.some(e => e.path === 'guardian.phoneCall')).toBe(true);
+      expect(res.body.errors.some(e => e.path === 'contactPerson.primaryPhone')).toBe(true);
     });
 
-    test('returns 422 when guardian.phoneCall has wrong digit count', async () => {
-      const body = { ...validBody, guardian: { ...validBody.guardian, phoneCall: '+25677212345' } }; // 8 digits
+    test('returns 422 when contactPerson.primaryPhone has wrong digit count', async () => {
+      const body = { ...validBody, contactPerson: { ...validBody.contactPerson, primaryPhone: '+25677212345' } };
       const res  = await postWith(body);
       expect(res.status).toBe(422);
     });
 
-    test('returns 422 when guardian.phoneWhatsapp is provided but invalid format', async () => {
-      const body = {
-        ...validBody,
-        guardian: { ...validBody.guardian, phoneWhatsapp: '0701234567' },
-      };
+    test('returns 422 when contactPerson.secondaryPhone is provided but invalid format', async () => {
+      const body = { ...validBody, contactPerson: { ...validBody.contactPerson, secondaryPhone: '0701234567' } };
       const res = await postWith(body);
       expect(res.status).toBe(422);
-      expect(res.body.errors.some(e => e.path === 'guardian.phoneWhatsapp')).toBe(true);
+      expect(res.body.errors.some(e => e.path === 'contactPerson.secondaryPhone')).toBe(true);
     });
 
-    test('accepts valid guardian.phoneWhatsapp in +256 format', async () => {
-      const body = {
-        ...validBody,
-        guardian: { ...validBody.guardian, phoneWhatsapp: '+256701234567' },
-      };
+    test('accepts valid contactPerson.secondaryPhone in +256 format', async () => {
+      const body = { ...validBody, contactPerson: { ...validBody.contactPerson, secondaryPhone: '+256701234567' } };
       const res = await postWith(body);
       expect(res.status).toBe(201);
     });
 
+    test('returns 422 when mother.phone is provided but invalid format', async () => {
+      const body = { ...validBody, mother: { fullName: 'Mary', phone: '0701234567' } };
+      const res = await postWith(body);
+      expect(res.status).toBe(422);
+      expect(res.body.errors.some(e => e.path === 'mother.phone')).toBe(true);
+    });
+
     // Bursary conditional validation
     test('returns 422 when isBursary=true and bursary.standardFeesAtAward is missing', async () => {
-      const body = {
-        ...validBody,
-        isBursary: true,
-        bursary: { schemeName: 'Gov', discountUgx: 100000 },
-      };
+      const body = { ...validBody, isBursary: true, bursary: { schemeName: 'Gov', discountUgx: 100000 } };
       const res = await postWith(body);
       expect(res.status).toBe(422);
       expect(res.body.errors.some(e => e.path === 'bursary.standardFeesAtAward')).toBe(true);
     });
 
     test('returns 422 when isBursary=true and bursary.discountUgx is not a positive integer', async () => {
-      const body = {
-        ...validBody,
-        isBursary: true,
-        bursary: { schemeName: 'Gov', standardFeesAtAward: 600000, discountUgx: 0 },
-      };
+      const body = { ...validBody, isBursary: true, bursary: { schemeName: 'Gov', standardFeesAtAward: 600000, discountUgx: 0 } };
       const res = await postWith(body);
       expect(res.status).toBe(422);
       expect(res.body.errors.some(e => e.path === 'bursary.discountUgx')).toBe(true);
     });
 
     test('does not require bursary fields when isBursary is absent', async () => {
-      const res = await postWith(validBody); // no isBursary, no bursary block
+      const res = await postWith(validBody);
       expect(res.status).toBe(201);
     });
   });

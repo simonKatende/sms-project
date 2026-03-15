@@ -38,90 +38,99 @@ export async function generatePupilIdCode() {
   return `${prefix}${String(nextSeq).padStart(4, '0')}`;
 }
 
-// ── Guardian lookup ───────────────────────────────────────────
+// ── Contact person lookup ─────────────────────────────────────
 
 /**
- * Find a guardian by their phone_call number.
- * Returns null if not found.
+ * Find a contact person by their primary phone number.
+ * Returns null if not found. Used for family linking.
  *
- * @param {string} phoneCall — normalised +256XXXXXXXXX format
+ * @param {string} primaryPhone — normalised +256XXXXXXXXX format
  * @returns {Promise<object|null>}
  */
-export async function findGuardianByPhone(phoneCall) {
-  return prisma.guardian.findFirst({
-    where: { phoneCall, deletedAt: null },
+export async function findContactPersonByPhone(primaryPhone) {
+  return prisma.contactPerson.findFirst({
+    where: { primaryPhone, deletedAt: null },
   });
 }
 
 // ── Core registration transaction ────────────────────────────
 
 /**
- * Create pupil, guardian (or reuse), optional bursary, optional photo record
- * all inside a single interactive transaction.
+ * Create pupil, optional parents (mother/father), contact person (or reuse),
+ * optional bursary, and optional photo record — all inside a single transaction.
  *
  * @param {object} data
- * @param {object} data.pupilData        — fields for pupils table
- * @param {object} data.guardianData     — fields for guardians table
- * @param {object|null} data.bursaryData — fields for pupil_bursaries (null = no bursary)
- * @param {object|null} data.photoData   — { filePath, fileSizeBytes } (null = no photo)
- * @param {string|null} data.existingGuardianId — if set, reuse this guardian
- * @returns {Promise<object>} the created pupil with includes
+ * @param {object}      data.pupilData              — fields for pupils table
+ * @param {object|null} data.motherData             — fields for pupil_parents (parentType='mother'), or null
+ * @param {object|null} data.fatherData             — fields for pupil_parents (parentType='father'), or null
+ * @param {object|null} data.contactPersonData      — fields for contact_persons (null if reusing existing)
+ * @param {string|null} data.existingContactPersonId — if set, reuse this contact_person record
+ * @param {object|null} data.bursaryData            — fields for pupil_bursaries (null = no bursary)
+ * @param {object|null} data.photoData              — { filePath, fileSizeBytes } (null = no photo)
+ * @returns {Promise<object>} the created pupil with all relations
  */
 export async function createPupilTransaction({
   pupilData,
-  guardianData,
+  motherData,
+  fatherData,
+  contactPersonData,
+  existingContactPersonId,
   bursaryData,
   photoData,
-  existingGuardianId,
 }) {
   return prisma.$transaction(async (tx) => {
     // 1. Create the pupil
     const pupil = await tx.pupil.create({ data: pupilData });
 
-    // 2. Guardian: reuse existing or create new
-    let guardianId = existingGuardianId;
-    if (!guardianId) {
-      const guardian = await tx.guardian.create({ data: guardianData });
-      guardianId = guardian.id;
+    // 2. Mother (optional)
+    if (motherData) {
+      await tx.pupilParent.create({
+        data: { ...motherData, pupilId: pupil.id, parentType: 'mother' },
+      });
     }
 
-    // 3. Link pupil ↔ guardian (primary contact)
-    await tx.pupilGuardian.create({
-      data: {
-        pupilId:          pupil.id,
-        guardianId,
-        isPrimaryContact: true,
-      },
+    // 3. Father (optional)
+    if (fatherData) {
+      await tx.pupilParent.create({
+        data: { ...fatherData, pupilId: pupil.id, parentType: 'father' },
+      });
+    }
+
+    // 4. Contact person: reuse existing or create new
+    let contactPersonId = existingContactPersonId;
+    if (!contactPersonId) {
+      const cp = await tx.contactPerson.create({ data: contactPersonData });
+      contactPersonId = cp.id;
+    }
+
+    // 5. Link pupil ↔ contact person
+    await tx.pupilContactPerson.create({
+      data: { pupilId: pupil.id, contactPersonId, isPrimary: true },
     });
 
-    // 4. Bursary (optional)
+    // 6. Bursary (optional)
     if (bursaryData) {
       await tx.pupilBursary.create({
         data: { ...bursaryData, pupilId: pupil.id },
       });
     }
 
-    // 5. Photo record (optional — file already written to disk by this point)
+    // 7. Photo record (optional — file already written to disk by this point)
     if (photoData) {
       await tx.pupilPhoto.create({
         data: { ...photoData, pupilId: pupil.id },
       });
     }
 
-    // 6. Return the full record with all relations for the 201 response
+    // 8. Return the full record with all relations for the 201 response
     return tx.pupil.findUnique({
       where: { id: pupil.id },
       include: {
-        stream: {
-          include: { class: true },
-        },
-        pupilGuardians: {
-          include: { guardian: true },
-        },
-        pupilBursaries: {
-          include: { bursaryScheme: true },
-        },
-        pupilPhoto: true,
+        stream:              { include: { class: true } },
+        pupilParents:        true,
+        pupilContactPersons: { include: { contactPerson: true } },
+        pupilBursaries:      { include: { bursaryScheme: true } },
+        pupilPhoto:          true,
       },
     });
   });
@@ -162,9 +171,9 @@ function buildWhere({ search, classId, streamId, section, isActive }) {
 // Includes for the list view (lightweight)
 const LIST_INCLUDE = {
   stream: { include: { class: true } },
-  pupilGuardians: {
-    where: { isPrimaryContact: true },
-    include: { guardian: { select: { fullName: true, phoneCall: true } } },
+  pupilContactPersons: {
+    where: { isPrimary: true },
+    include: { contactPerson: { select: { fullName: true, primaryPhone: true, relationship: true } } },
     take: 1,
   },
   pupilBills: {
@@ -194,18 +203,19 @@ export async function findPupilById(id) {
   return prisma.pupil.findUnique({
     where: { id, deletedAt: null },
     include: {
-      stream: { include: { class: { include: { schoolSection: true } } } },
-      pupilGuardians: { include: { guardian: true } },
-      pupilBursaries: { include: { bursaryScheme: true } },
-      pupilPhoto: true,
+      stream:              { include: { class: { include: { schoolSection: true } } } },
+      pupilParents:        true,
+      pupilContactPersons: { include: { contactPerson: true } },
+      pupilBursaries:      { include: { bursaryScheme: true } },
+      pupilPhoto:          true,
     },
   });
 }
 
-export async function findSiblings(pupilId, guardianIds) {
-  if (!guardianIds.length) return [];
-  const links = await prisma.pupilGuardian.findMany({
-    where: { guardianId: { in: guardianIds }, pupilId: { not: pupilId } },
+export async function findSiblings(pupilId, contactPersonIds) {
+  if (!contactPersonIds.length) return [];
+  const links = await prisma.pupilContactPerson.findMany({
+    where: { contactPersonId: { in: contactPersonIds }, pupilId: { not: pupilId } },
     include: {
       pupil: {
         include: {
@@ -221,9 +231,9 @@ export async function findSiblings(pupilId, guardianIds) {
               .map(l => l.pupil);
 }
 
-export async function findPupilsByGuardian(guardianId) {
-  const links = await prisma.pupilGuardian.findMany({
-    where: { guardianId },
+export async function findPupilsByContactPerson(contactPersonId) {
+  const links = await prisma.pupilContactPerson.findMany({
+    where: { contactPersonId },
     include: {
       pupil: {
         include: {
@@ -244,9 +254,9 @@ export async function findAllForExport({ filters = {} }) {
     orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
     include: {
       stream: { include: { class: true } },
-      pupilGuardians: {
-        where: { isPrimaryContact: true },
-        include: { guardian: { select: { fullName: true, phoneCall: true } } },
+      pupilContactPersons: {
+        where: { isPrimary: true },
+        include: { contactPerson: { select: { fullName: true, primaryPhone: true } } },
         take: 1,
       },
       pupilBursaries: { where: { isActive: true }, take: 1 },

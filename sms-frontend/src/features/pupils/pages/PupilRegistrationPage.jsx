@@ -4,16 +4,24 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Camera, X, AlertCircle, CheckCircle2, ChevronLeft, Loader2 } from 'lucide-react';
+import { Camera, X, AlertCircle, CheckCircle2, ChevronLeft, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { pupilsApi } from '../../../api/pupils.js';
 import { classesApi, streamsApi } from '../../../api/academic.js';
-import { useAuthStore } from '../../../store/authStore.js';
 
 // ── Zod schema ────────────────────────────────────────────────
 const ugandaPhone = /^\+256[0-9]{9}$/;
 
+const parentSchema = z.object({
+  fullName: z.string().optional(),
+  phone:    z.string().regex(ugandaPhone, 'Must be +256XXXXXXXXX').or(z.literal('')).optional(),
+  email:    z.string().email('Invalid email').or(z.literal('')).optional(),
+  address:  z.string().optional(),
+  nin:      z.string().optional(),
+});
+
 const schema = z.object({
+  // Section 1: Personal Info
   firstName:         z.string().min(1, 'Required').max(80),
   lastName:          z.string().min(1, 'Required').max(80),
   otherNames:        z.string().optional(),
@@ -26,17 +34,24 @@ const schema = z.object({
   medicalConditions: z.string().optional(),
   lin:               z.string().optional(),
   schoolpayCode:     z.string().optional(),
-  streamId:          z.string().optional(),
-  enrolmentDate:     z.string().min(1, 'Required'),
-  guardian: z.object({
-    fullName:        z.string().min(1, 'Required'),
-    relationship:    z.string().min(1, 'Required'),
-    phoneCall:       z.string().regex(ugandaPhone, 'Must be +256XXXXXXXXX'),
-    phoneWhatsapp:   z.string().regex(ugandaPhone, 'Must be +256XXXXXXXXX').or(z.literal('')).optional(),
-    email:           z.string().email('Invalid email').or(z.literal('')).optional(),
-    physicalAddress: z.string().optional(),
-    occupation:      z.string().optional(),
+  // Section 2: Mother (optional)
+  mother: parentSchema.optional(),
+  // Section 3: Father (optional)
+  father: parentSchema.optional(),
+  // Section 4: Contact Person (required)
+  contactPerson: z.object({
+    fullName:          z.string().min(1, 'Required'),
+    relationship:      z.string().min(1, 'Required'),
+    primaryPhone:      z.string().regex(ugandaPhone, 'Must be +256XXXXXXXXX'),
+    secondaryPhone:    z.string().regex(ugandaPhone, 'Must be +256XXXXXXXXX').or(z.literal('')).optional(),
+    whatsappIndicator: z.enum(['primary', 'secondary', 'none']).default('primary'),
+    email:             z.string().email('Invalid email').or(z.literal('')).optional(),
+    physicalAddress:   z.string().optional(),
   }),
+  // Section 5: Enrolment
+  streamId:      z.string().optional(),
+  enrolmentDate: z.string().min(1, 'Required'),
+  // Section 6: Bursary
   isBursary: z.boolean().default(false),
   bursary: z.object({
     schemeName:          z.string().min(1, 'Required'),
@@ -45,22 +60,18 @@ const schema = z.object({
   }).optional(),
 }).superRefine((data, ctx) => {
   if (data.isBursary) {
-    if (!data.bursary?.schemeName) {
+    if (!data.bursary?.schemeName)
       ctx.addIssue({ code: 'custom', path: ['bursary', 'schemeName'], message: 'Required' });
-    }
-    if (!data.bursary?.standardFeesAtAward) {
+    if (!data.bursary?.standardFeesAtAward)
       ctx.addIssue({ code: 'custom', path: ['bursary', 'standardFeesAtAward'], message: 'Required' });
-    }
-    if (!data.bursary?.discountUgx) {
+    if (!data.bursary?.discountUgx)
       ctx.addIssue({ code: 'custom', path: ['bursary', 'discountUgx'], message: 'Required' });
-    }
-    if (data.bursary && data.bursary.standardFeesAtAward <= data.bursary.discountUgx) {
+    if (data.bursary && data.bursary.standardFeesAtAward <= data.bursary.discountUgx)
       ctx.addIssue({ code: 'custom', path: ['bursary', 'discountUgx'], message: 'Discount must be less than standard fees' });
-    }
   }
 });
 
-// ── Small helpers ─────────────────────────────────────────────
+// ── Small UI helpers ──────────────────────────────────────────
 
 function Field({ label, error, required, children, hint }) {
   return (
@@ -118,6 +129,34 @@ function SectionCard({ title, subtitle, children }) {
   );
 }
 
+function CollapsibleCard({ title, subtitle, badge, children }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="w-full px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between"
+      >
+        <div className="text-left">
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+            <span className="text-xs text-gray-400 font-normal">(optional)</span>
+            {badge && (
+              <span className="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full font-medium">
+                {badge}
+              </span>
+            )}
+          </div>
+          {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
+        </div>
+        {open ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+      </button>
+      {open && <div className="px-6 py-5">{children}</div>}
+    </div>
+  );
+}
+
 // ── Photo upload ──────────────────────────────────────────────
 function PhotoUpload({ photoFile, setPhotoFile }) {
   const inputRef  = useRef(null);
@@ -145,7 +184,6 @@ function PhotoUpload({ photoFile, setPhotoFile }) {
 
   return (
     <div className="flex items-start gap-5">
-      {/* Preview / upload area */}
       <div className="relative shrink-0">
         {preview ? (
           <>
@@ -195,21 +233,21 @@ function PhotoUpload({ photoFile, setPhotoFile }) {
   );
 }
 
-// ── Guardian lookup ───────────────────────────────────────────
-function GuardianLookup({ phone, watch }) {
-  const [checked, setChecked] = useState(false);
-
+// ── Contact person lookup ─────────────────────────────────────
+function ContactPersonLookup({ phone }) {
   const { data, isFetching } = useQuery({
-    queryKey:  ['guardian-check', phone],
-    queryFn:   () => pupilsApi.guardianCheck(phone).then(r => r.data),
+    queryKey:  ['contact-person-check', phone],
+    queryFn:   () => pupilsApi.contactPersonCheck(phone).then(r => r.data),
     enabled:   /^\+256[0-9]{9}$/.test(phone ?? ''),
     staleTime: 30_000,
   });
 
-  useEffect(() => { setChecked(false); }, [phone]);
-
   if (!phone || !/^\+256[0-9]{9}$/.test(phone)) return null;
-  if (isFetching) return <p className="text-xs text-gray-400 mt-2 flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Checking…</p>;
+  if (isFetching) return (
+    <p className="text-xs text-gray-400 mt-2 flex items-center gap-1">
+      <Loader2 size={12} className="animate-spin" /> Checking…
+    </p>
+  );
   if (!data) return null;
 
   if (data.exists) {
@@ -217,11 +255,11 @@ function GuardianLookup({ phone, watch }) {
       <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 flex items-start gap-3">
         <CheckCircle2 size={16} className="text-blue-600 mt-0.5 shrink-0" />
         <div className="text-sm">
-          <p className="font-medium text-blue-800">Guardian already registered</p>
+          <p className="font-medium text-blue-800">Contact person already registered</p>
           <p className="text-blue-600 text-xs mt-0.5">
-            {data.guardian.fullName} · {data.guardian.relationship}
+            {data.contactPerson.fullName} · {data.contactPerson.relationship}
           </p>
-          <p className="text-blue-600 text-xs">This pupil will be linked to the existing record.</p>
+          <p className="text-blue-600 text-xs">This pupil will be linked to the existing record (family link).</p>
         </div>
       </div>
     );
@@ -229,7 +267,36 @@ function GuardianLookup({ phone, watch }) {
   return (
     <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 flex items-start gap-3">
       <AlertCircle size={16} className="text-gray-400 mt-0.5 shrink-0" />
-      <p className="text-sm text-gray-500">No existing guardian found. A new record will be created.</p>
+      <p className="text-sm text-gray-500">No existing contact found. A new record will be created.</p>
+    </div>
+  );
+}
+
+// ── Parent fields component ───────────────────────────────────
+function ParentFields({ prefix, register, errors }) {
+  const e = errors?.[prefix] ?? {};
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <Field label="Full Name" error={e.fullName?.message}>
+        <Input {...register(`${prefix}.fullName`)} placeholder="e.g. Mary Nakato" />
+      </Field>
+      <Field label="Phone" error={e.phone?.message} hint="+256XXXXXXXXX">
+        <Input {...register(`${prefix}.phone`)} placeholder="+256772000000" type="tel" />
+      </Field>
+      <Field label="Email" error={e.email?.message}>
+        <Input type="email" {...register(`${prefix}.email`)} placeholder="parent@example.com" />
+      </Field>
+      <Field label="NIN (National ID)" error={e.nin?.message}>
+        <Input {...register(`${prefix}.nin`)} placeholder="CM123456789..." className="font-mono" />
+      </Field>
+      <div className="sm:col-span-2">
+        <Field label="Address" error={e.address?.message}>
+          <textarea {...register(`${prefix}.address`)} rows={2}
+                    placeholder="Home address…"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm
+                               focus:outline-none focus:ring-2 focus:ring-primary resize-none" />
+        </Field>
+      </div>
     </div>
   );
 }
@@ -246,16 +313,17 @@ export default function PupilRegistrationPage() {
   } = useForm({
     resolver:      zodResolver(schema),
     defaultValues: {
-      isBursary:     false,
-      enrolmentDate: new Date().toISOString().slice(0, 10),
+      isBursary:                          false,
+      enrolmentDate:                      new Date().toISOString().slice(0, 10),
+      'contactPerson.whatsappIndicator':  'primary',
     },
   });
 
-  const isBursary             = watch('isBursary');
-  const standardFeesAtAward   = watch('bursary.standardFeesAtAward') ?? 0;
-  const discountUgx           = watch('bursary.discountUgx')         ?? 0;
-  const agreedNetFees         = standardFeesAtAward - discountUgx;
-  const guardianPhone         = watch('guardian.phoneCall');
+  const isBursary           = watch('isBursary');
+  const standardFeesAtAward = watch('bursary.standardFeesAtAward') ?? 0;
+  const discountUgx         = watch('bursary.discountUgx')         ?? 0;
+  const agreedNetFees       = standardFeesAtAward - discountUgx;
+  const contactPhone        = watch('contactPerson.primaryPhone');
 
   // Dynamic classes + streams
   const { data: classesData } = useQuery({
@@ -273,7 +341,6 @@ export default function PupilRegistrationPage() {
   });
   const streams = streamsData ?? [];
 
-  // Clear streamId when class changes
   const handleClassChange = (e) => {
     setSelectedClassId(e.target.value);
     setValue('streamId', '');
@@ -285,10 +352,9 @@ export default function PupilRegistrationPage() {
 
   const onSubmit = async (data) => {
     try {
-      // Build multipart form data
       const fd = new FormData();
 
-      // Scalar fields
+      // Scalar pupil fields
       const scalars = ['firstName','lastName','otherNames','dateOfBirth','gender','section',
                        'religion','house','formerSchool','medicalConditions','lin',
                        'schoolpayCode','streamId','enrolmentDate'];
@@ -296,9 +362,23 @@ export default function PupilRegistrationPage() {
         if (data[key] != null && data[key] !== '') fd.append(key, data[key]);
       }
 
-      // Guardian (bracket notation — multer/busboy handles this)
-      for (const [k, v] of Object.entries(data.guardian)) {
-        if (v != null && v !== '') fd.append(`guardian[${k}]`, v);
+      // Mother (optional — only if fullName provided)
+      if (data.mother?.fullName) {
+        for (const [k, v] of Object.entries(data.mother)) {
+          if (v != null && v !== '') fd.append(`mother[${k}]`, v);
+        }
+      }
+
+      // Father (optional — only if fullName provided)
+      if (data.father?.fullName) {
+        for (const [k, v] of Object.entries(data.father)) {
+          if (v != null && v !== '') fd.append(`father[${k}]`, v);
+        }
+      }
+
+      // Contact person (required)
+      for (const [k, v] of Object.entries(data.contactPerson)) {
+        if (v != null && v !== '') fd.append(`contactPerson[${k}]`, v);
       }
 
       // Bursary
@@ -341,9 +421,8 @@ export default function PupilRegistrationPage() {
 
       <div className="space-y-6 max-w-3xl">
 
-        {/* ── SECTION 1: Personal Information ────────────── */}
+        {/* ── SECTION 1: Personal Information ─────────────── */}
         <SectionCard title="Personal Information" subtitle="Basic pupil details and photo">
-          {/* Photo */}
           <div className="mb-6">
             <PhotoUpload photoFile={photoFile} setPhotoFile={setPhotoFile} />
           </div>
@@ -362,13 +441,11 @@ export default function PupilRegistrationPage() {
               <Input type="date" {...register('dateOfBirth')} error={errors.dateOfBirth} />
             </Field>
 
-            {/* Gender */}
             <Field label="Gender" required error={errors.gender?.message}>
               <div className="flex gap-4 mt-1">
                 {['Male','Female'].map(g => (
                   <label key={g} className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" value={g} {...register('gender')}
-                           className="accent-primary" />
+                    <input type="radio" value={g} {...register('gender')} className="accent-primary" />
                     <span className="text-sm text-gray-700">{g}</span>
                   </label>
                 ))}
@@ -378,8 +455,8 @@ export default function PupilRegistrationPage() {
             <Field label="Section" required error={errors.section?.message}>
               <Select {...register('section')} error={errors.section}>
                 <option value="">Select section…</option>
-                <option value="Day">Day</option>
-                <option value="Boarding">Boarding</option>
+                <option value="Day">Day (Non-Resident)</option>
+                <option value="Boarding">Boarding (Resident)</option>
               </Select>
             </Field>
 
@@ -407,16 +484,36 @@ export default function PupilRegistrationPage() {
           </div>
         </SectionCard>
 
-        {/* ── SECTION 2: Guardian & Family ───────────────── */}
-        <SectionCard title="Guardian & Family Information"
-                     subtitle="Primary contact details — a guardian with the same phone number will be reused">
+        {/* ── SECTION 2: Mother Details (optional) ─────────── */}
+        <CollapsibleCard
+          title="Mother's Details"
+          subtitle="Biological mother information"
+          badge={watch('mother.fullName') ? 'Added' : undefined}
+        >
+          <ParentFields prefix="mother" register={register} errors={errors} />
+        </CollapsibleCard>
+
+        {/* ── SECTION 3: Father Details (optional) ─────────── */}
+        <CollapsibleCard
+          title="Father's Details"
+          subtitle="Biological father information"
+          badge={watch('father.fullName') ? 'Added' : undefined}
+        >
+          <ParentFields prefix="father" register={register} errors={errors} />
+        </CollapsibleCard>
+
+        {/* ── SECTION 4: Contact Person (required) ─────────── */}
+        <SectionCard
+          title="Contact Person"
+          subtitle="The school's communication contact — required. Can be the mother, father, or another person."
+        >
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Guardian Full Name" required error={errors.guardian?.fullName?.message}>
-              <Input {...register('guardian.fullName')} error={errors.guardian?.fullName}
+            <Field label="Full Name" required error={errors.contactPerson?.fullName?.message}>
+              <Input {...register('contactPerson.fullName')} error={errors.contactPerson?.fullName}
                      placeholder="e.g. Sarah Nakato" />
             </Field>
-            <Field label="Relationship" required error={errors.guardian?.relationship?.message}>
-              <Select {...register('guardian.relationship')} error={errors.guardian?.relationship}>
+            <Field label="Relationship" required error={errors.contactPerson?.relationship?.message}>
+              <Select {...register('contactPerson.relationship')} error={errors.contactPerson?.relationship}>
                 <option value="">Select…</option>
                 {['Mother','Father','Guardian','Uncle','Aunt','Grandparent','Sibling','Other'].map(r => (
                   <option key={r} value={r}>{r}</option>
@@ -424,38 +521,57 @@ export default function PupilRegistrationPage() {
               </Select>
             </Field>
 
-            <Field label="Primary Phone (Call)" required error={errors.guardian?.phoneCall?.message}
-                   hint="Format: +256XXXXXXXXX">
-              <Input {...register('guardian.phoneCall')} error={errors.guardian?.phoneCall}
+            <Field label="Primary Phone" required error={errors.contactPerson?.primaryPhone?.message}
+                   hint="Used for calls and SMS. Format: +256XXXXXXXXX">
+              <Input {...register('contactPerson.primaryPhone')} error={errors.contactPerson?.primaryPhone}
                      placeholder="+256772000000" type="tel" />
             </Field>
-            <Field label="WhatsApp Number" error={errors.guardian?.phoneWhatsapp?.message}
-                   hint="If different from call number">
-              <Input {...register('guardian.phoneWhatsapp')} error={errors.guardian?.phoneWhatsapp}
+            <Field label="Secondary Phone" error={errors.contactPerson?.secondaryPhone?.message}
+                   hint="Optional alternative number">
+              <Input {...register('contactPerson.secondaryPhone')} error={errors.contactPerson?.secondaryPhone}
                      placeholder="+256701000000" type="tel" />
             </Field>
 
-            <Field label="Email Address" error={errors.guardian?.email?.message}>
-              <Input type="email" {...register('guardian.email')} placeholder="guardian@example.com" />
-            </Field>
-            <Field label="Occupation" error={errors.guardian?.occupation?.message}>
-              <Input {...register('guardian.occupation')} placeholder="e.g. Teacher" />
+            {/* WhatsApp indicator */}
+            <div className="sm:col-span-2">
+              <Field label="WhatsApp Number" error={errors.contactPerson?.whatsappIndicator?.message}
+                     hint="Which number is on WhatsApp?">
+                <div className="flex gap-6 mt-1">
+                  {[
+                    { value: 'primary',   label: 'Primary number' },
+                    { value: 'secondary', label: 'Secondary number' },
+                    { value: 'none',      label: 'Not on WhatsApp' },
+                  ].map(opt => (
+                    <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" value={opt.value}
+                             {...register('contactPerson.whatsappIndicator')}
+                             className="accent-primary" />
+                      <span className="text-sm text-gray-700">{opt.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </Field>
+            </div>
+
+            <Field label="Email Address" error={errors.contactPerson?.email?.message}>
+              <Input type="email" {...register('contactPerson.email')}
+                     placeholder="contact@example.com" />
             </Field>
           </div>
           <div className="mt-4">
-            <Field label="Physical Address" error={errors.guardian?.physicalAddress?.message}>
-              <textarea {...register('guardian.physicalAddress')} rows={2}
+            <Field label="Physical Address" error={errors.contactPerson?.physicalAddress?.message}>
+              <textarea {...register('contactPerson.physicalAddress')} rows={2}
                         placeholder="Home or work address…"
                         className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm
                                    focus:outline-none focus:ring-2 focus:ring-primary resize-none" />
             </Field>
           </div>
 
-          {/* Guardian lookup result */}
-          <GuardianLookup phone={guardianPhone} />
+          {/* Contact person lookup / family-link indicator */}
+          <ContactPersonLookup phone={contactPhone} />
         </SectionCard>
 
-        {/* ── SECTION 3: Enrolment Details ────────────────── */}
+        {/* ── SECTION 5: Enrolment Details ─────────────────── */}
         <SectionCard title="Enrolment Details" subtitle="Class assignment and payment codes">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Enrolment Date" required error={errors.enrolmentDate?.message}>
@@ -466,7 +582,6 @@ export default function PupilRegistrationPage() {
               <Input {...register('schoolpayCode')} placeholder="e.g. SP-XXXX"
                      className="font-mono" />
             </Field>
-            {/* Class — not a form field, just drives the stream filter */}
             <Field label="Class" hint="Select a class to filter streams">
               <Select value={selectedClassId} onChange={handleClassChange}>
                 <option value="">— Select class —</option>
@@ -488,10 +603,9 @@ export default function PupilRegistrationPage() {
           </div>
         </SectionCard>
 
-        {/* ── SECTION 4: Fees & Bursary ───────────────────── */}
+        {/* ── SECTION 6: Fees & Bursary ────────────────────── */}
         <SectionCard title="Fees & Bursary Information"
                      subtitle="Configure bursary scheme if applicable">
-          {/* Toggle */}
           <label className="flex items-start gap-3 cursor-pointer select-none">
             <input
               type="checkbox"
@@ -504,7 +618,6 @@ export default function PupilRegistrationPage() {
             </div>
           </label>
 
-          {/* Bursary form (conditional) */}
           {isBursary && (
             <div className="mt-5 space-y-4 pt-5 border-t border-gray-100">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -515,8 +628,7 @@ export default function PupilRegistrationPage() {
                 <Field label="Standard Fees (UGX)" required error={errors.bursary?.standardFeesAtAward?.message}
                        hint="Full fee amount for this class/section">
                   <Input
-                    type="number"
-                    min="0"
+                    type="number" min="0"
                     {...register('bursary.standardFeesAtAward', { valueAsNumber: true })}
                     error={errors.bursary?.standardFeesAtAward}
                     placeholder="e.g. 600000"
@@ -524,15 +636,13 @@ export default function PupilRegistrationPage() {
                 </Field>
                 <Field label="Discount (UGX)" required error={errors.bursary?.discountUgx?.message}>
                   <Input
-                    type="number"
-                    min="0"
+                    type="number" min="0"
                     {...register('bursary.discountUgx', { valueAsNumber: true })}
                     error={errors.bursary?.discountUgx}
                     placeholder="e.g. 200000"
                   />
                 </Field>
 
-                {/* Auto-computed net */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Agreed Net Fees (UGX)
@@ -553,7 +663,7 @@ export default function PupilRegistrationPage() {
           )}
         </SectionCard>
 
-        {/* ── Sticky action bar ────────────────────────────── */}
+        {/* ── Sticky action bar ─────────────────────────────── */}
         <div className="sticky bottom-0 bg-white border-t border-gray-200 -mx-4 lg:-mx-6 px-4 lg:px-6 py-4
                         flex items-center justify-end gap-3 shadow-sm">
           <button

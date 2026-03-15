@@ -1,10 +1,10 @@
 import { apiClient } from './client.js';
 
 export const pupilsApi = {
-  list:            (params)      => apiClient.get('/pupils', { params }),
-  getById:         (id)          => apiClient.get(`/pupils/${id}`),
-  getFamily:       (guardianId)  => apiClient.get(`/pupils/family/${guardianId}`),
-  guardianCheck:   (phone)       => apiClient.get('/pupils/guardian-check', { params: { phone } }),
+  list:                (params)          => apiClient.get('/pupils', { params }),
+  getById:             (id)              => apiClient.get(`/pupils/${id}`),
+  getFamily:           (contactPersonId) => apiClient.get(`/pupils/family/${contactPersonId}`),
+  contactPersonCheck:  (phone)           => apiClient.get('/pupils/contact-person-check', { params: { phone } }),
 
   create: (formData) =>
     apiClient.post('/pupils', formData, {

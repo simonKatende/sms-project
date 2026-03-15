@@ -39,17 +39,36 @@ export async function registerPupil(req, res) {
     enrolmentDate:     body.enrolmentDate,
   };
 
-  // ── Guardian fields ───────────────────────────────────────
-  // Nested under req.body.guardian
-  const g = body.guardian ?? {};
-  const guardianFields = {
-    fullName:        g.fullName,
-    relationship:    g.relationship,
-    phoneCall:       g.phoneCall,
-    phoneWhatsapp:   g.phoneWhatsapp,
-    email:           g.email,
-    physicalAddress: g.physicalAddress,
-    occupation:      g.occupation,
+  // ── Mother (optional) ─────────────────────────────────────
+  const m      = body.mother ?? {};
+  const mother = m.fullName ? {
+    fullName: m.fullName,
+    phone:    m.phone    ?? null,
+    email:    m.email    ?? null,
+    address:  m.address  ?? null,
+    nin:      m.nin      ?? null,
+  } : null;
+
+  // ── Father (optional) ─────────────────────────────────────
+  const f      = body.father ?? {};
+  const father = f.fullName ? {
+    fullName: f.fullName,
+    phone:    f.phone    ?? null,
+    email:    f.email    ?? null,
+    address:  f.address  ?? null,
+    nin:      f.nin      ?? null,
+  } : null;
+
+  // ── Contact person (required) ─────────────────────────────
+  const cp = body.contactPerson ?? {};
+  const contactPerson = {
+    fullName:          cp.fullName,
+    relationship:      cp.relationship,
+    primaryPhone:      cp.primaryPhone,
+    secondaryPhone:    cp.secondaryPhone    ?? null,
+    whatsappIndicator: cp.whatsappIndicator ?? 'primary',
+    email:             cp.email             ?? null,
+    physicalAddress:   cp.physicalAddress   ?? null,
   };
 
   // ── Bursary fields (optional) ─────────────────────────────
@@ -65,9 +84,11 @@ export async function registerPupil(req, res) {
 
   const pupil = await PupilService.registerPupil({
     pupilFields,
-    guardianFields,
+    mother,
+    father,
+    contactPerson,
     bursaryFields,
-    photoFile:   req.file ?? null,   // set by multer middleware in the route
+    photoFile:   req.file ?? null,
     createdById: req.user.id,
     ipAddress:   req.ip,
   });
@@ -81,11 +102,11 @@ export async function listPupils(req, res) {
   return res.status(200).json(result);
 }
 
-// ── GET /api/v1/pupils/guardian-check ────────────────────────
-export async function guardianCheck(req, res) {
+// ── GET /api/v1/pupils/contact-person-check ───────────────────
+export async function contactPersonCheck(req, res) {
   const { phone } = req.query;
   if (!phone) return res.status(422).json({ error: 'phone query param required' });
-  const result = await PupilService.guardianLookup(phone);
+  const result = await PupilService.contactPersonLookup(phone);
   return res.status(200).json(result);
 }
 
@@ -98,9 +119,9 @@ export async function exportPupils(req, res) {
   return res.status(200).send(buffer);
 }
 
-// ── GET /api/v1/pupils/family/:guardianId ────────────────────
+// ── GET /api/v1/pupils/family/:contactPersonId ────────────────
 export async function getPupilFamily(req, res) {
-  const pupils = await PupilService.getPupilFamily(req.params.guardianId);
+  const pupils = await PupilService.getPupilFamily(req.params.contactPersonId);
   return res.status(200).json({ data: pupils });
 }
 
@@ -133,7 +154,6 @@ export async function deletePupil(req, res) {
 export async function uploadPhoto(req, res) {
   const { id } = req.params;
 
-  // multer already validated mime type and size
   if (!req.file) return res.status(422).json({ error: 'No photo file provided' });
 
   const existing = await prisma.pupil.findUnique({
@@ -142,10 +162,8 @@ export async function uploadPhoto(req, res) {
   });
   if (!existing) return res.status(404).json({ error: 'Pupil not found' });
 
-  // Sharp resize + save (overwrites existing file on disk — same path per pupilId)
   const filePath = await savePhoto(req.file.buffer, id);
 
-  // Upsert the DB record
   await prisma.pupilPhoto.upsert({
     where:  { pupilId: id },
     create: { pupilId: id, filePath, fileSizeBytes: req.file.size, uploadedById: req.user.id },
