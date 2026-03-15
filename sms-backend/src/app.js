@@ -18,6 +18,7 @@ import { academicYearAdminRouter, termAdminRouter }
   from './routes/academicCalendarRoutes.js';
 import { classGroupRouter, classSubGroupRouter, classHierarchyRouter }
   from './routes/classHierarchyRoutes.js';
+import userManagementRoutes from './routes/userManagementRoutes.js';
 
 const app = express();
 
@@ -45,6 +46,7 @@ app.use('/api/v1/admin/terms',           termAdminRouter);
 app.use('/api/v1/admin/class-groups',    classGroupRouter);
 app.use('/api/v1/admin/class-sub-groups', classSubGroupRouter);
 app.use('/api/v1/admin/class-hierarchy', classHierarchyRouter);
+app.use('/api/v1/admin/users',           userManagementRoutes);
 
 // ── Health check ─────────────────────────────────────────────
 app.get('/health', (_req, res) => {
