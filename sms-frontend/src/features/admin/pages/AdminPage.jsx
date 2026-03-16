@@ -11,7 +11,15 @@ import { Plus, Edit2, CheckCircle, XCircle, Loader2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { adminClassesApi, adminStreamsApi, adminHousesApi } from '../../../api/admin.js';
 import { schoolSectionsApi, academicYearsApi } from '../../../api/academic.js';
-import InstitutionProfileTab from './InstitutionProfileTab.jsx';
+import InstitutionProfileTab    from './InstitutionProfileTab.jsx';
+import AcademicCalendarTab     from './AcademicCalendarTab.jsx';
+import UsersTab                from './UsersTab.jsx';
+import SubjectsTab             from './SubjectsTab.jsx';
+import ClassSubjectTab         from './ClassSubjectTab.jsx';
+import SectionRulesTab         from './SectionRulesTab.jsx';
+import GradingScaleTab         from './GradingScaleTab.jsx';
+import AssessmentTypesTab      from './AssessmentTypesTab.jsx';
+import ReportCardSettingsTab   from './ReportCardSettingsTab.jsx';
 
 // ── Shared helpers ─────────────────────────────────────────────
 
@@ -699,14 +707,22 @@ function HousesTab() {
 // ═══════════════════════════════════════════════════════════════
 
 const TABS = [
-  { id: 'classes', label: 'Classes' },
-  { id: 'streams', label: 'Streams' },
-  { id: 'houses',  label: 'Houses' },
-  { id: 'profile', label: 'Institution Profile' },
+  { id: 'profile',      label: 'Institution Profile' },
+  { id: 'calendar',     label: 'Academic Calendar' },
+  { id: 'users',        label: 'User Management' },
+  { id: 'classes',      label: 'Classes' },
+  { id: 'streams',      label: 'Streams' },
+  { id: 'houses',       label: 'Houses' },
+  { id: 'subjects',     label: 'Subjects' },
+  { id: 'classsubj',   label: 'Class-Subject Assignments' },
+  { id: 'secrules',    label: 'Subject-Section Rules' },
+  { id: 'grading',     label: 'Grading Scale' },
+  { id: 'assessment',  label: 'Assessment Types' },
+  { id: 'reportcard',  label: 'Report Card Settings' },
 ];
 
 export default function AdminPage() {
-  const [activeTab, setActiveTab] = useState('classes');
+  const [activeTab, setActiveTab] = useState('profile');
 
   return (
     <div className="space-y-5">
@@ -734,10 +750,18 @@ export default function AdminPage() {
 
       {/* Tab content */}
       <div>
-        {activeTab === 'classes' && <ClassesTab />}
-        {activeTab === 'streams' && <StreamsTab />}
-        {activeTab === 'houses'  && <HousesTab />}
-        {activeTab === 'profile' && <InstitutionProfileTab />}
+        {activeTab === 'profile'     && <InstitutionProfileTab />}
+        {activeTab === 'calendar'    && <AcademicCalendarTab />}
+        {activeTab === 'users'       && <UsersTab />}
+        {activeTab === 'classes'     && <ClassesTab />}
+        {activeTab === 'streams'     && <StreamsTab />}
+        {activeTab === 'houses'      && <HousesTab />}
+        {activeTab === 'subjects'    && <SubjectsTab />}
+        {activeTab === 'classsubj'   && <ClassSubjectTab />}
+        {activeTab === 'secrules'    && <SectionRulesTab />}
+        {activeTab === 'grading'     && <GradingScaleTab />}
+        {activeTab === 'assessment'  && <AssessmentTypesTab />}
+        {activeTab === 'reportcard'  && <ReportCardSettingsTab />}
       </div>
     </div>
   );

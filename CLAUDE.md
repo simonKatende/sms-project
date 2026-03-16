@@ -224,6 +224,26 @@ Components:
 
 ## Working Rules
 
+### 0. Reference Documents — MANDATORY before every sprint task
+ALWAYS read the relevant reference documents in the `/docs/` folder before planning or
+implementing any feature. These documents are the authoritative source of truth for
+requirements, business rules, database design, and UI/UX specifications. The summary in
+this CLAUDE.md is a convenience — the full detail is in the docs. Do not rely solely on
+CLAUDE.md for field-level specs, workflow details, or PDF/screen layouts.
+
+Documents to reference:
+- `/docs/SMS_Requirements_Analysis_v1.2.md` — full functional requirements per module
+- `/docs/SMS_System_Architecture_v1.1.md` — service layer design, adapter specs, RBAC matrix
+- `/docs/SMS_Database_Design.md` — authoritative table/column/constraint definitions
+- `/docs/SMS_Database_Design_Amendment_v1.2.md` — schema additions (grade_remarks, division_remarks, term_workflow_steps, fee_invoices)
+- `/docs/SMS_Architecture_Amendment_AAN001.md` — EgoSMS adapter spec, delivery polling
+- `/docs/SMS_Architecture_Amendment_AAN002.md` — AAN-002 full change register (parent model, class hierarchy, auto-comments, invoice format, workflow stepper, UI direction)
+- `/docs/SMS_UIUX_Design.md` — screen wireframes, component patterns, typography
+- `/docs/SMS_UIUX_Design_v1.1_Update.md` — updated wireframes (pupil detail, billing, report card workflow)
+- `/docs/Sample report card.pdf` — actual report card physical format (read before Sprint 4)
+
+This rule overrides any instruction to "just get started". Read first, then build.
+
 ### 1. Testing — MANDATORY after every service
 After building ANY service file, ALWAYS write a Jest unit test immediately.
 Location: sms-backend/src/__tests__/services/[ServiceName].test.js

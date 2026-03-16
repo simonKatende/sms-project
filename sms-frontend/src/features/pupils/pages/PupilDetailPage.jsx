@@ -1,3 +1,14 @@
+/**
+ * PupilDetailPage — tabbed pupil profile.
+ *
+ * Tabs:
+ *  1. Overview          — personal info, enrolment, identifiers, bursary, latest result
+ *  2. Guardian & Family — Mother, Father, Contact Person (new 3-level model) + siblings
+ *  3. Fees              — current-term fee progress (Sprint 3+ will add history)
+ *  4. Academics         — placeholder (Sprint 4)
+ *  5. Communication Log — placeholder (Sprint 5)
+ */
+
 import { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -144,81 +155,325 @@ function PupilHero({ pupil, photoBase, canEdit, onPhotoUpdated }) {
   );
 }
 
-// ── Fees progress ──────────────────────────────────────────────
-function FeesSection({ bill }) {
-  if (!bill) {
-    return <p className="py-4 text-sm text-gray-400 text-center">No bill for the current term.</p>;
-  }
+// ── Tab bar ────────────────────────────────────────────────────
+const TABS = [
+  { id: 'overview',   label: 'Overview' },
+  { id: 'family',     label: 'Guardian & Family' },
+  { id: 'fees',       label: 'Fees' },
+  { id: 'academics',  label: 'Academics' },
+  { id: 'comms',      label: 'Communication Log' },
+];
 
-  const pct   = bill.totalAmount > 0 ? Math.round((bill.totalPaid / bill.totalAmount) * 100) : 0;
-  const color = pct >= 75 ? '#148F77' : pct >= 25 ? '#F39C12' : '#C0392B';
-  const balance = bill.totalAmount - bill.totalPaid;
+function TabBar({ active, onChange }) {
+  return (
+    <div className="border-b border-gray-200 bg-white rounded-t-xl">
+      <nav className="flex overflow-x-auto" aria-label="Pupil profile tabs">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => onChange(tab.id)}
+            className={`px-5 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+              active === tab.id
+                ? 'border-blue-600 text-blue-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+// ── Overview tab ───────────────────────────────────────────────
+function OverviewTab({ pupil }) {
+  const stream  = pupil.stream;
+  const bursary = pupil.pupilBursaries?.[0];
 
   return (
-    <div className="py-2 space-y-3">
-      <div className="flex items-center justify-between text-sm">
-        <span className="text-gray-600">
-          UGX {fmt(bill.totalPaid)} paid of UGX {fmt(bill.totalAmount)}
-        </span>
-        <span className="font-semibold" style={{ color }}>{pct}%</span>
-      </div>
-      <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
-      </div>
-      <div className="flex justify-between text-xs text-gray-500">
-        <span>Balance: <span className={balance > 0 ? 'text-red-600 font-medium' : 'text-green-600 font-medium'}>
-          UGX {fmt(balance)}
-        </span></span>
-        <span className={`px-2 py-0.5 rounded-full font-medium ${
-          bill.status === 'paid'    ? 'bg-green-50 text-green-700' :
-          bill.status === 'partial' ? 'bg-amber-50 text-amber-700' :
-          'bg-red-50 text-red-700'
-        }`}>{bill.status}</span>
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div className="lg:col-span-2 space-y-5">
+
+        <SectionCard title="Personal Information" icon={GraduationCap}>
+          <dl>
+            <InfoRow label="Date of Birth">{fmtDate(pupil.dateOfBirth)}</InfoRow>
+            <InfoRow label="Gender">{pupil.gender}</InfoRow>
+            <InfoRow label="Religion">{pupil.religion}</InfoRow>
+            <InfoRow label="House">{pupil.house}</InfoRow>
+            <InfoRow label="Medical notes">{pupil.medicalConditions}</InfoRow>
+            <InfoRow label="Former school">{pupil.formerSchool}</InfoRow>
+            <InfoRow label="Enrolment date">{fmtDate(pupil.enrolmentDate)}</InfoRow>
+          </dl>
+        </SectionCard>
+
+        <SectionCard title="Enrolment Details" icon={BookOpen}>
+          <dl>
+            <InfoRow label="Class">
+              {stream ? `${stream.class?.name ?? ''} — ${stream.name}` : null}
+            </InfoRow>
+            <InfoRow label="Section"><SectionBadge section={pupil.section} /></InfoRow>
+            <InfoRow label="LIN">
+              {pupil.lin
+                ? <code className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded">{pupil.lin}</code>
+                : null}
+            </InfoRow>
+            <InfoRow label="SchoolPay code">
+              {pupil.schoolpayCode
+                ? <code className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded">{pupil.schoolpayCode}</code>
+                : null}
+            </InfoRow>
+          </dl>
+        </SectionCard>
+
       </div>
 
-      {bill.billLineItems?.length > 0 && (
-        <div className="mt-3 border-t border-gray-100 pt-3">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Line Items</p>
-          <div className="space-y-1.5">
-            {bill.billLineItems.map((item) => (
-              <div key={item.id} className="flex justify-between text-sm">
-                <span className="text-gray-700">{item.feeCategory?.name ?? item.description}</span>
-                <span className="text-gray-900 font-medium">UGX {fmt(item.amount)}</span>
-              </div>
+      <div className="space-y-5">
+
+        <SectionCard title="Latest Academic Result" icon={BookOpen}>
+          {pupil.latestResult ? (
+            <dl className="py-1">
+              <InfoRow label="Term">{pupil.latestResult.term?.name}</InfoRow>
+              <InfoRow label="Period">{pupil.latestResult.assessmentPeriod?.name}</InfoRow>
+              <InfoRow label="Aggregate">
+                {pupil.latestResult.totalAggregate !== null ? pupil.latestResult.totalAggregate : '—'}
+              </InfoRow>
+              <InfoRow label="Division">{pupil.latestResult.division ?? '—'}</InfoRow>
+              <InfoRow label="Rank in class">
+                {pupil.latestResult.rankInClass
+                  ? `${pupil.latestResult.rankInClass} / ${pupil.latestResult.totalInClass}`
+                  : '—'}
+              </InfoRow>
+            </dl>
+          ) : (
+            <p className="py-4 text-sm text-gray-400 text-center">No results yet.</p>
+          )}
+        </SectionCard>
+
+        {bursary && (
+          <SectionCard title="Bursary" icon={Heart}>
+            <dl className="py-1">
+              <InfoRow label="Scheme">{bursary.bursaryScheme?.name}</InfoRow>
+              <InfoRow label="Agreed net fees">UGX {fmt(bursary.agreedNetFeesUgx)}</InfoRow>
+              <InfoRow label="Discount">UGX {fmt(bursary.discountUgx)}</InfoRow>
+              <InfoRow label="Section at award">{bursary.sectionAtAward}</InfoRow>
+              <InfoRow label="Awarded">{fmtDate(bursary.awardedDate)}</InfoRow>
+            </dl>
+          </SectionCard>
+        )}
+
+        <SectionCard title="Identifiers" icon={Hash}>
+          <dl className="py-1">
+            <InfoRow label="Pupil ID">
+              <code className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded">
+                {pupil.pupilIdCode}
+              </code>
+            </InfoRow>
+            {pupil.lin && (
+              <InfoRow label="LIN">
+                <code className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded">{pupil.lin}</code>
+              </InfoRow>
+            )}
+            {pupil.schoolpayCode && (
+              <InfoRow label="SchoolPay">
+                <code className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded">{pupil.schoolpayCode}</code>
+              </InfoRow>
+            )}
+          </dl>
+        </SectionCard>
+
+      </div>
+    </div>
+  );
+}
+
+// ── Guardian & Family tab ──────────────────────────────────────
+function ContactCard({ title, data, isContactPerson = false }) {
+  if (!data) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <h4 className="text-sm font-semibold text-gray-700 mb-1">{title}</h4>
+        <p className="text-sm text-gray-400">Not recorded</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-semibold text-gray-700">{title}</h4>
+        {isContactPerson && (
+          <span className="text-xs bg-blue-50 text-blue-700 ring-1 ring-blue-200 px-2 py-0.5 rounded-full">
+            School Contact
+          </span>
+        )}
+      </div>
+      <p className="text-base font-medium text-gray-900">{data.fullName}</p>
+      {isContactPerson && data.relationship && (
+        <p className="text-xs text-gray-500">Relationship: {data.relationship}</p>
+      )}
+      <div className="flex flex-wrap gap-x-5 gap-y-1.5">
+        {/* Phone fields differ between parent and contact person */}
+        {isContactPerson ? (
+          <>
+            {data.primaryPhone && (
+              <a href={`tel:${data.primaryPhone}`}
+                 className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-blue-600">
+                <Phone size={12} />
+                {data.primaryPhone}
+                {data.whatsappIndicator === 'primary' && (
+                  <span className="ml-1 text-green-600 font-medium">WhatsApp</span>
+                )}
+              </a>
+            )}
+            {data.secondaryPhone && (
+              <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                <Phone size={12} />
+                {data.secondaryPhone}
+                {data.whatsappIndicator === 'secondary' && (
+                  <span className="ml-1 text-green-600 font-medium">WhatsApp</span>
+                )}
+              </span>
+            )}
+          </>
+        ) : (
+          data.phone && (
+            <a href={`tel:${data.phone}`}
+               className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-blue-600">
+              <Phone size={12} /> {data.phone}
+            </a>
+          )
+        )}
+        {data.email && (
+          <a href={`mailto:${data.email}`}
+             className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-blue-600">
+            <Mail size={12} /> {data.email}
+          </a>
+        )}
+        {(data.physicalAddress || data.address) && (
+          <span className="flex items-center gap-1.5 text-xs text-gray-500">
+            <MapPin size={12} /> {data.physicalAddress ?? data.address}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FamilyTab({ pupil, navigate }) {
+  const mother = pupil.pupilParents?.find((p) => p.parentType === 'mother') ?? null;
+  const father = pupil.pupilParents?.find((p) => p.parentType === 'father') ?? null;
+  const contactPerson = pupil.pupilContactPersons?.[0]?.contactPerson ?? null;
+  const siblings = pupil.siblings ?? [];
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <ContactCard title="Mother" data={mother} />
+        <ContactCard title="Father" data={father} />
+        <ContactCard title="Contact Person" data={contactPerson} isContactPerson />
+      </div>
+
+      {siblings.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <h4 className="text-sm font-semibold text-gray-700 mb-3">
+            Siblings at this school ({siblings.length})
+          </h4>
+          <div className="flex flex-wrap gap-2">
+            {siblings.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => navigate(`/pupils/${s.id}`)}
+                className="text-xs text-blue-700 hover:underline bg-blue-50 px-3 py-1.5 rounded-lg"
+              >
+                {s.firstName} {s.lastName}
+                {s.stream && <span className="text-gray-500 ml-1">({s.stream.class?.name})</span>}
+              </button>
             ))}
           </div>
         </div>
+      )}
+
+      {!mother && !father && !contactPerson && (
+        <p className="py-6 text-sm text-gray-400 text-center">No family records on file.</p>
       )}
     </div>
   );
 }
 
-// ── Comms log ──────────────────────────────────────────────────
-function CommsLog({ comms }) {
-  if (!comms?.length) {
-    return <p className="py-4 text-sm text-gray-400 text-center">No recent communications.</p>;
+// ── Fees tab ───────────────────────────────────────────────────
+function FeesTab({ pupil }) {
+  const bill = pupil.currentBill;
+
+  if (!bill) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-400 text-sm">
+        No fee record for the current term.
+      </div>
+    );
   }
+
+  const pct     = bill.totalAmount > 0 ? Math.round((bill.totalPaid / bill.totalAmount) * 100) : 0;
+  const color   = pct >= 75 ? '#148F77' : pct >= 25 ? '#F39C12' : '#C0392B';
+  const balance = bill.totalAmount - bill.totalPaid;
+
   return (
-    <ul className="divide-y divide-gray-50">
-      {comms.map((c) => (
-        <li key={c.id} className="py-2.5 flex items-start gap-3">
-          <MessageSquare size={14} className="text-gray-400 mt-0.5 shrink-0" />
-          <div className="min-w-0">
-            <p className="text-sm text-gray-800 line-clamp-2">{c.messageBody}</p>
-            <p className="text-xs text-gray-400 mt-0.5">
-              To {c.guardian?.fullName ?? 'Guardian'} · {fmtDate(c.createdAt)}
-              {c.deliveryStatus && (
-                <span className={`ml-2 px-1.5 py-0.5 rounded font-medium ${
-                  c.deliveryStatus === 'delivered' ? 'bg-green-50 text-green-700' :
-                  c.deliveryStatus === 'failed'    ? 'bg-red-50 text-red-700' :
-                  'bg-gray-100 text-gray-600'
-                }`}>{c.deliveryStatus}</span>
-              )}
-            </p>
+    <div className="space-y-5">
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-gray-700">Current Term Balance</h3>
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-gray-600">
+            UGX {fmt(bill.totalPaid)} paid of UGX {fmt(bill.totalAmount)}
+          </span>
+          <span className="font-semibold" style={{ color }}>{pct}%</span>
+        </div>
+        <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+          <div className="h-full rounded-full transition-all"
+               style={{ width: `${pct}%`, backgroundColor: color }} />
+        </div>
+        <div className="flex justify-between text-xs text-gray-500">
+          <span>Balance: <span className={balance > 0 ? 'text-red-600 font-medium' : 'text-green-600 font-medium'}>
+            UGX {fmt(balance)}
+          </span></span>
+          <span className={`px-2 py-0.5 rounded-full font-medium ${
+            bill.status === 'paid'    ? 'bg-green-50 text-green-700' :
+            bill.status === 'partial' ? 'bg-amber-50 text-amber-700' :
+            'bg-red-50 text-red-700'
+          }`}>{bill.status}</span>
+        </div>
+
+        {bill.billLineItems?.length > 0 && (
+          <div className="border-t border-gray-100 pt-4">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Line Items</p>
+            <div className="space-y-1.5">
+              {bill.billLineItems.map((item) => (
+                <div key={item.id} className="flex justify-between text-sm">
+                  <span className="text-gray-700">{item.feeCategory?.name ?? item.description}</span>
+                  <span className="text-gray-900 font-medium">UGX {fmt(item.amount)}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </li>
-      ))}
-    </ul>
+        )}
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-5 text-center text-sm text-gray-400">
+        Payment history will be available in Sprint 3.
+      </div>
+    </div>
+  );
+}
+
+// ── Placeholder tab ────────────────────────────────────────────
+function ComingSoonTab({ title, sprint }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-12 flex flex-col items-center gap-3 text-center">
+      <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center">
+        <BookOpen size={22} className="text-gray-400" />
+      </div>
+      <p className="text-base font-medium text-gray-700">{title}</p>
+      <p className="text-sm text-gray-400">This section will be built in {sprint}.</p>
+    </div>
   );
 }
 
@@ -230,6 +485,7 @@ export default function PupilDetailPage() {
   const roleName     = useAuthStore((s) => s.user?.roleName);
   const photoBase    = import.meta.env.VITE_API_URL?.replace('/api/v1', '') ?? 'http://localhost:3000';
 
+  const [activeTab,     setActiveTab]     = useState('overview');
   const [confirmToggle, setConfirmToggle] = useState(false);
 
   const { data: pupil, isLoading, isError } = useQuery({
@@ -237,8 +493,7 @@ export default function PupilDetailPage() {
     queryFn:  () => pupilsApi.getById(id).then(r => r.data.data),
   });
 
-  const canEdit   = ['system_admin', 'bursar'].includes(roleName);
-  const canDelete = roleName === 'system_admin';
+  const canEdit = ['system_admin', 'bursar'].includes(roleName);
 
   const { mutate: toggleActive, isPending: isToggling } = useMutation({
     mutationFn: () => pupilsApi.update(id, { isActive: !pupil.isActive }),
@@ -263,22 +518,14 @@ export default function PupilDetailPage() {
   if (isError || !pupil) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-3 text-center">
-        <AlertCircle size={32} className="text-danger" />
+        <AlertCircle size={32} className="text-red-500" />
         <p className="text-gray-600 font-medium">Pupil not found or failed to load.</p>
-        <button
-          onClick={() => navigate('/pupils')}
-          className="text-sm text-primary hover:underline"
-        >
+        <button onClick={() => navigate('/pupils')} className="text-sm text-blue-600 hover:underline">
           Back to pupils list
         </button>
       </div>
     );
   }
-
-  const stream   = pupil.stream;
-  const primary  = pupil.pupilGuardians?.[0]?.guardian;
-  const bursary  = pupil.pupilBursaries?.[0];
-  const siblings = pupil.siblings ?? [];
 
   return (
     <div className="space-y-5">
@@ -361,207 +608,18 @@ export default function PupilDetailPage() {
         />
       </div>
 
-      {/* ── Two-column grid ───────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-
-        {/* LEFT column (2/3) */}
-        <div className="lg:col-span-2 space-y-5">
-
-          {/* Personal Info */}
-          <SectionCard title="Personal Information" icon={GraduationCap}>
-            <dl>
-              <InfoRow label="Date of Birth">{fmtDate(pupil.dateOfBirth)}</InfoRow>
-              <InfoRow label="Gender">{pupil.gender}</InfoRow>
-              <InfoRow label="Religion">{pupil.religion}</InfoRow>
-              <InfoRow label="House">{pupil.house}</InfoRow>
-              <InfoRow label="Medical notes">{pupil.medicalConditions}</InfoRow>
-              <InfoRow label="Former school">{pupil.formerSchool}</InfoRow>
-              <InfoRow label="Enrolment date">{fmtDate(pupil.enrolmentDate)}</InfoRow>
-            </dl>
-          </SectionCard>
-
-          {/* Enrolment details */}
-          <SectionCard title="Enrolment Details" icon={BookOpen}>
-            <dl>
-              <InfoRow label="Class">
-                {stream ? `${stream.class?.name ?? ''} — ${stream.name}` : null}
-              </InfoRow>
-              <InfoRow label="Section"><SectionBadge section={pupil.section} /></InfoRow>
-              <InfoRow label="LIN">
-                {pupil.lin
-                  ? <code className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded">{pupil.lin}</code>
-                  : null}
-              </InfoRow>
-              <InfoRow label="SchoolPay code">
-                {pupil.schoolpayCode
-                  ? <code className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded">{pupil.schoolpayCode}</code>
-                  : null}
-              </InfoRow>
-            </dl>
-          </SectionCard>
-
-          {/* Guardian */}
-          <SectionCard title="Guardian & Family" icon={Users}>
-            {pupil.pupilGuardians?.length ? (
-              <ul className="divide-y divide-gray-50">
-                {pupil.pupilGuardians.map(({ guardian, isPrimary }) => (
-                  <li key={guardian.id} className="py-3">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="font-medium text-sm text-gray-900">{guardian.fullName}</span>
-                      <div className="flex gap-1.5">
-                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                          {guardian.relationship}
-                        </span>
-                        {isPrimary && (
-                          <span className="text-xs bg-blue-50 text-blue-700 ring-1 ring-blue-200 px-2 py-0.5 rounded-full">
-                            Primary
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-x-5 gap-y-1">
-                      {guardian.phoneCall && (
-                        <a href={`tel:${guardian.phoneCall}`}
-                           className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-primary">
-                          <Phone size={12} /> {guardian.phoneCall}
-                        </a>
-                      )}
-                      {guardian.phoneWhatsapp && guardian.phoneWhatsapp !== guardian.phoneCall && (
-                        <span className="flex items-center gap-1.5 text-xs text-gray-500">
-                          <MessageSquare size={12} /> {guardian.phoneWhatsapp}
-                        </span>
-                      )}
-                      {guardian.email && (
-                        <a href={`mailto:${guardian.email}`}
-                           className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-primary">
-                          <Mail size={12} /> {guardian.email}
-                        </a>
-                      )}
-                      {guardian.physicalAddress && (
-                        <span className="flex items-center gap-1.5 text-xs text-gray-500">
-                          <MapPin size={12} /> {guardian.physicalAddress}
-                        </span>
-                      )}
-                      {guardian.occupation && (
-                        <span className="flex items-center gap-1.5 text-xs text-gray-500">
-                          <Briefcase size={12} /> {guardian.occupation}
-                        </span>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="py-4 text-sm text-gray-400 text-center">No guardian on record.</p>
-            )}
-
-            {siblings.length > 0 && (
-              <div className="border-t border-gray-100 pt-3 pb-2 mt-1">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                  Siblings at this school ({siblings.length})
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {siblings.map((s) => (
-                    <button
-                      key={s.id}
-                      onClick={() => navigate(`/pupils/${s.id}`)}
-                      className="text-xs text-primary hover:underline bg-blue-50 px-2 py-1 rounded-lg"
-                    >
-                      {s.firstName} {s.lastName}
-                      {s.stream && <span className="text-gray-500 ml-1">({s.stream.class?.name})</span>}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </SectionCard>
-
-          {/* Recent comms */}
-          <SectionCard title="Recent Communications" icon={MessageSquare}>
-            <CommsLog comms={pupil.recentComms} />
-          </SectionCard>
-        </div>
-
-        {/* RIGHT column (1/3) */}
-        <div className="space-y-5">
-
-          {/* Academic result */}
-          <SectionCard title="Latest Academic Result" icon={BookOpen}>
-            {pupil.latestResult ? (
-              <dl className="py-1">
-                <InfoRow label="Term">
-                  {pupil.latestResult.term?.name}
-                </InfoRow>
-                <InfoRow label="Period">
-                  {pupil.latestResult.assessmentPeriod?.name}
-                </InfoRow>
-                <InfoRow label="Aggregate">
-                  {pupil.latestResult.totalAggregate !== null
-                    ? pupil.latestResult.totalAggregate
-                    : '—'}
-                </InfoRow>
-                <InfoRow label="Division">
-                  {pupil.latestResult.division ?? '—'}
-                </InfoRow>
-                <InfoRow label="Rank in class">
-                  {pupil.latestResult.rankInClass
-                    ? `${pupil.latestResult.rankInClass} / ${pupil.latestResult.totalInClass}`
-                    : '—'}
-                </InfoRow>
-              </dl>
-            ) : (
-              <p className="py-4 text-sm text-gray-400 text-center">No results yet.</p>
-            )}
-          </SectionCard>
-
-          {/* Fees */}
-          <SectionCard title="Fees — Current Term" icon={CreditCard}>
-            <FeesSection bill={pupil.currentBill} />
-          </SectionCard>
-
-          {/* Bursary */}
-          {bursary && (
-            <SectionCard title="Bursary" icon={Heart}>
-              <dl className="py-1">
-                <InfoRow label="Scheme">{bursary.bursaryScheme?.name}</InfoRow>
-                <InfoRow label="Agreed net fees">
-                  UGX {fmt(bursary.agreedNetFeesUgx)}
-                </InfoRow>
-                <InfoRow label="Discount">
-                  UGX {fmt(bursary.discountUgx)}
-                </InfoRow>
-                <InfoRow label="Section at award">{bursary.sectionAtAward}</InfoRow>
-                <InfoRow label="Awarded">{fmtDate(bursary.awardedDate)}</InfoRow>
-              </dl>
-            </SectionCard>
-          )}
-
-          {/* IDs */}
-          <SectionCard title="Identifiers" icon={Hash}>
-            <dl className="py-1">
-              <InfoRow label="Pupil ID">
-                <code className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded">
-                  {pupil.pupilIdCode}
-                </code>
-              </InfoRow>
-              {pupil.lin && (
-                <InfoRow label="LIN">
-                  <code className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded">
-                    {pupil.lin}
-                  </code>
-                </InfoRow>
-              )}
-              {pupil.schoolpayCode && (
-                <InfoRow label="SchoolPay">
-                  <code className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded">
-                    {pupil.schoolpayCode}
-                  </code>
-                </InfoRow>
-              )}
-            </dl>
-          </SectionCard>
+      {/* ── Tabs ──────────────────────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <TabBar active={activeTab} onChange={setActiveTab} />
+        <div className="p-5">
+          {activeTab === 'overview'  && <OverviewTab  pupil={pupil} />}
+          {activeTab === 'family'    && <FamilyTab    pupil={pupil} navigate={navigate} />}
+          {activeTab === 'fees'      && <FeesTab      pupil={pupil} />}
+          {activeTab === 'academics' && <ComingSoonTab title="Academics" sprint="Sprint 4" />}
+          {activeTab === 'comms'     && <ComingSoonTab title="Communication Log" sprint="Sprint 5" />}
         </div>
       </div>
+
     </div>
   );
 }

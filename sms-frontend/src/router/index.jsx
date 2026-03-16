@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore.js';
 
 import LoginPage            from '../pages/LoginPage.jsx';
+import DashboardPage        from '../pages/DashboardPage.jsx';
 import AppShell             from '../components/AppShell.jsx';
 import PupilListPage        from '../features/pupils/pages/PupilListPage.jsx';
 import PupilRegistrationPage from '../features/pupils/pages/PupilRegistrationPage.jsx';
@@ -30,7 +31,7 @@ export const router = createBrowserRouter([
     path: '/',
     element: <RequireAuth><AppShell /></RequireAuth>,
     children: [
-      { index: true, element: <Navigate to="/pupils" replace /> },
+      { index: true, element: <DashboardPage /> },
       { path: 'pupils',          element: <PupilListPage /> },
       { path: 'pupils/new',      element: <PupilRegistrationPage /> },
       { path: 'pupils/:id',      element: <PupilDetailPage /> },

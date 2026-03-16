@@ -65,6 +65,8 @@ model User {
   paymentPlansCreated          PaymentPlan[]
   feeStatementsGenerated       FeeStatement[]
   feeStructureAdjustments      FeeStructureAdjustment[]
+  feeInvoicesGenerated         FeeInvoice[]
+  termWorkflowStepsCompleted   TermWorkflowStep[]
   // Two separate relations from PupilScore — must be named
   pupilScoresEntered           PupilScore[]             @relation("PupilScoreEnteredBy")
   pupilScoresLastEdited        PupilScore[]             @relation("PupilScoreLastEditedBy")
@@ -173,8 +175,10 @@ model AcademicYear {
 
   createdBy User? @relation(fields: [createdById], references: [id])
 
-  terms   Term[]
-  streams Stream[]
+  terms        Term[]
+  streams      Stream[]
+  feeStructures FeeStructure[]
+  feeInvoices  FeeInvoice[]
 
   @@map("academic_years")
 }
@@ -196,7 +200,6 @@ model Term {
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
 
   classSubjectAssignments ClassSubjectAssignment[]
-  feeStructures           FeeStructure[]
   pupilBills              PupilBill[]
   feeStatements           FeeStatement[]
   assessmentPeriods       AssessmentPeriod[]
@@ -204,6 +207,8 @@ model Term {
   pupilTermResults        PupilTermResult[]
   reportCards             ReportCard[]
   feeStructureAdjustments FeeStructureAdjustment[]
+  termWorkflowSteps       TermWorkflowStep[]
+  feeInvoices             FeeInvoice[]
 
   @@map("terms")
 }
@@ -388,6 +393,8 @@ model GradingScaleEntry {
 
   gradingScale GradingScale @relation(fields: [gradingScaleId], references: [id], onDelete: Cascade)
 
+  gradeRemarks GradeRemark[]
+
   @@unique([gradingScaleId, gradeLabel])
   @@unique([gradingScaleId, pointsValue])
   @@map("grading_scale_entries")
@@ -407,6 +414,8 @@ model DivisionBoundary {
   updatedAt      DateTime @updatedAt @db.Timestamptz(6)
 
   gradingScale GradingScale @relation(fields: [gradingScaleId], references: [id], onDelete: Cascade)
+
+  divisionRemarks DivisionRemark[]
 
   @@map("division_boundaries")
 }
@@ -484,6 +493,7 @@ model Pupil {
   pupilBursaries       PupilBursary[]
   pupilBills           PupilBill[]
   feeStatements        FeeStatement[]
+  feeInvoices          FeeInvoice[]
   pupilScores          PupilScore[]
   pupilTermResults     PupilTermResult[]
   reportCards          ReportCard[]
@@ -587,29 +597,30 @@ model FeeCategory {
   bursarySchemes          BursaryScheme[]
   billLineItems           BillLineItem[]
   feeStructureAdjustments FeeStructureAdjustment[]
+  feeInvoiceLineItems     FeeInvoiceLineItem[]
 
   @@map("fee_categories")
 }
 
-/// Published fee schedule — one row per category × class × section × term
+/// Published fee schedule — one row per category × class × section × academic year
 model FeeStructure {
-  id            String   @id @default(uuid()) @db.Uuid
-  feeCategoryId String   @db.Uuid
-  classId       String   @db.Uuid
-  section       String   @db.VarChar(20)
-  termId        String   @db.Uuid
-  amount        Int
-  isMandatory   Boolean  @default(true)
-  createdById   String?  @db.Uuid
-  createdAt     DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt     DateTime @updatedAt @db.Timestamptz(6)
+  id             String   @id @default(uuid()) @db.Uuid
+  feeCategoryId  String   @db.Uuid
+  classId        String   @db.Uuid
+  section        String   @db.VarChar(20)
+  academicYearId String   @db.Uuid
+  amount         Int
+  isMandatory    Boolean  @default(true)
+  createdById    String?  @db.Uuid
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(6)
 
-  feeCategory FeeCategory @relation(fields: [feeCategoryId], references: [id])
-  class       Class       @relation(fields: [classId], references: [id])
-  term        Term        @relation(fields: [termId], references: [id])
-  createdBy   User?       @relation(fields: [createdById], references: [id])
+  feeCategory  FeeCategory  @relation(fields: [feeCategoryId], references: [id])
+  class        Class        @relation(fields: [classId], references: [id])
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  createdBy    User?        @relation(fields: [createdById], references: [id])
 
-  @@unique([feeCategoryId, classId, section, termId])
+  @@unique([feeCategoryId, classId, section, academicYearId])
   @@map("fee_structures")
 }
 
@@ -905,7 +916,7 @@ model ReportCardSetting {
   showGradeGuide         Boolean  @default(true)
   showSchoolRequirements Boolean  @default(true)
   showNextTermDates      Boolean  @default(true)
-  whoCanGenerate         String   @default("dos_admin") @db.VarChar(20)
+  whoCanGenerate         String   @default("dos_and_admin") @db.VarChar(20)
   updatedById            String?  @db.Uuid
   createdAt              DateTime @default(now()) @db.Timestamptz(6)
   updatedAt              DateTime @updatedAt @db.Timestamptz(6)
@@ -1055,4 +1066,115 @@ model ScheduledJobLog {
   updatedAt        DateTime  @updatedAt @db.Timestamptz(6)
 
   @@map("scheduled_job_logs")
+}
+
+// =============================================================
+// GROUP I — FEES INVOICING (AAN-002-07)
+// =============================================================
+
+/// One invoice record per pupil per term — generated after billing, printed A5 (2 per A4)
+model FeeInvoice {
+  id              String    @id @default(uuid()) @db.Uuid
+  pupilId         String    @db.Uuid
+  termId          String    @db.Uuid
+  academicYearId  String    @db.Uuid
+  invoiceNumber   String    @unique @db.VarChar(50)
+  invoiceDate     DateTime  @db.Date
+  dueDate         DateTime? @db.Date
+  totalAmount     Int
+  bursaryDiscount Int       @default(0)
+  previousArrears Int       @default(0)
+  netTotal        Int
+  status          String    @default("draft") @db.VarChar(20)
+  pdfPath         String?   @db.VarChar(500)
+  generatedById   String?   @db.Uuid
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(6)
+
+  pupil        Pupil        @relation(fields: [pupilId], references: [id])
+  term         Term         @relation(fields: [termId], references: [id])
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  generatedBy  User?        @relation(fields: [generatedById], references: [id])
+
+  lineItems FeeInvoiceLineItem[]
+
+  @@unique([pupilId, termId])
+  @@index([status])
+  @@map("fee_invoices")
+}
+
+/// Individual fee category line on a printed invoice
+model FeeInvoiceLineItem {
+  id              String   @id @default(uuid()) @db.Uuid
+  feeInvoiceId    String   @db.Uuid
+  feeCategoryId   String   @db.Uuid
+  description     String   @db.VarChar(200)
+  standardAmount  Int
+  bursaryDiscount Int      @default(0)
+  netAmount       Int
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(6)
+
+  feeInvoice  FeeInvoice  @relation(fields: [feeInvoiceId], references: [id], onDelete: Cascade)
+  feeCategory FeeCategory @relation(fields: [feeCategoryId], references: [id])
+
+  @@map("fee_invoice_line_items")
+}
+
+// =============================================================
+// GROUP J — AUTO-COMMENTS (AAN-002-10 / AAN-002-11)
+// =============================================================
+
+/// Admin-configured remark options per grade band (D1-F9); up to 5 per band
+model GradeRemark {
+  id                  String   @id @default(uuid()) @db.Uuid
+  gradingScaleEntryId String   @db.Uuid
+  remarkNumber        Int      @db.SmallInt
+  remarkText          String   @db.VarChar(500)
+  createdAt           DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime @updatedAt @db.Timestamptz(6)
+
+  gradingScaleEntry GradingScaleEntry @relation(fields: [gradingScaleEntryId], references: [id], onDelete: Cascade)
+
+  @@unique([gradingScaleEntryId, remarkNumber])
+  @@map("grade_remarks")
+}
+
+/// Admin-configured division comments (class teacher + headteacher); up to 5 per division per role
+model DivisionRemark {
+  id                 String   @id @default(uuid()) @db.Uuid
+  divisionBoundaryId String   @db.Uuid
+  commentRole        String   @db.VarChar(20)
+  optionNumber       Int      @db.SmallInt
+  remarkText         String   @db.VarChar(500)
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @db.Timestamptz(6)
+
+  divisionBoundary DivisionBoundary @relation(fields: [divisionBoundaryId], references: [id], onDelete: Cascade)
+
+  @@unique([divisionBoundaryId, commentRole, optionNumber])
+  @@map("division_remarks")
+}
+
+// =============================================================
+// GROUP K — ACADEMICS WORKFLOW (AAN-002-09)
+// =============================================================
+
+/// Tracks completion state of each of the 8 Academics workflow steps per term (drives stepper UI)
+model TermWorkflowStep {
+  id            String    @id @default(uuid()) @db.Uuid
+  termId        String    @db.Uuid
+  stepNumber    Int       @db.SmallInt
+  stepName      String    @db.VarChar(80)
+  status        String    @default("pending") @db.VarChar(20)
+  completedAt   DateTime? @db.Timestamptz(6)
+  completedById String?   @db.Uuid
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @db.Timestamptz(6)
+
+  term        Term  @relation(fields: [termId], references: [id], onDelete: Cascade)
+  completedBy User? @relation(fields: [completedById], references: [id])
+
+  @@unique([termId, stepNumber])
+  @@map("term_workflow_steps")
 }
