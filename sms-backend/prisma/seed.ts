@@ -411,7 +411,34 @@ async function seedAcademicStructure(subGroups: Awaited<ReturnType<typeof seedCl
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 9. SUBJECT SECTION RULES (default grading behaviour per section)
+// 9. DEFAULT SUBJECTS
+// ─────────────────────────────────────────────────────────────────────────────
+async function seedSubjects() {
+  const subjects = [
+    { name: 'English',            code: 'ENG'  },
+    { name: 'Mathematics',        code: 'MTC'  },
+    { name: 'Literacy I',         code: 'LIT1' },
+    { name: 'Literacy II',        code: 'LIT2' },
+    { name: 'Religious Education', code: 'RE'  },
+    { name: 'Reading',            code: 'RDG'  },
+    { name: 'Luganda',            code: 'LUG'  },
+    { name: 'Science',            code: 'SCI'  },
+    { name: 'Social Studies',     code: 'SST'  },
+  ];
+
+  for (const subject of subjects) {
+    await prisma.subject.upsert({
+      where:  { name: subject.name },
+      update: { code: subject.code, isActive: true },
+      create: { ...subject, isActive: true },
+    });
+  }
+
+  console.log(`✓  Subjects seeded (${subjects.length})`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 10. SUBJECT SECTION RULES (default grading behaviour per section)
 // ─────────────────────────────────────────────────────────────────────────────
 async function seedSubjectSectionRules() {
   const lower = await prisma.schoolSection.findUnique({ where: { code: 'LOWER' } });
@@ -499,6 +526,7 @@ async function main() {
   const subGroups = await seedClassHierarchy();
   await seedAcademicStructure(subGroups);
   await seedHouses();
+  await seedSubjects();
   await seedSubjectSectionRules();
 
   console.log('─────────────────────────────────────────────────────');
