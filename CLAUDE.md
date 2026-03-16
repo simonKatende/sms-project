@@ -368,5 +368,29 @@ Future: WhatsApp (adapter only — no schema/UI changes needed)
 /docs/SMS_Architecture_Amendment_AAN001.md
 /docs/SMS_Architecture_Amendment_AAN002.md
 
+## When to Read the Reference Documents
+Claude Code must read the relevant document(s) BEFORE starting work on any
+prompt that involves the areas listed below. Do not rely on CLAUDE.md summaries
+alone for these — open and read the actual file first.
+
+| If the prompt involves...              | Read this document first                        |
+|----------------------------------------|-------------------------------------------------|
+| Schema changes or new DB tables        | /docs/SMS_Database_Design.md                    |
+|                                        | /docs/SMS_Database_Design_Amendment_v1.2.md     |
+| Grading engine, scores, report cards   | /docs/SMS_Database_Design.md (Section 7)        |
+|                                        | /docs/SMS_Requirements_Analysis_v1.2.md (S3.4) |
+| Fees, bursary, billing, invoices       | /docs/SMS_Database_Design.md (Group E)          |
+|                                        | /docs/SMS_Database_Design_Amendment_v1.2.md     |
+|                                        | /docs/SMS_Requirements_Analysis_v1.2.md (S3.2) |
+| EgoSMS adapter or communication module | /docs/SMS_Architecture_Amendment_AAN001.md      |
+| Any AAN-002 feature (houses, hierarchy,|                                                 |
+| invoices, auto-comments, stepper)      | /docs/SMS_Architecture_Amendment_AAN002.md      |
+| System architecture, service layer,    |                                                 |
+| new adapters, RBAC                     | /docs/SMS_System_Architecture_v1.1.md           |
+| Any functional requirement unclear     | /docs/SMS_Requirements_Analysis_v1.2.md         |
+
+When in doubt, read the relevant document. CLAUDE.md is a quick reference —
+the /docs files are the full specification and take precedence.
+
 ## Current Sprint
 Sprint 2 — School Configuration (remaining work: see Sprint Plan above)
