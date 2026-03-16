@@ -411,7 +411,56 @@ async function seedAcademicStructure(subGroups: Awaited<ReturnType<typeof seedCl
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 9. HOUSES
+// 9. SUBJECT SECTION RULES (default grading behaviour per section)
+// ─────────────────────────────────────────────────────────────────────────────
+async function seedSubjectSectionRules() {
+  const lower = await prisma.schoolSection.findUnique({ where: { code: 'LOWER' } });
+  const upper = await prisma.schoolSection.findUnique({ where: { code: 'UPPER' } });
+
+  if (!lower || !upper) {
+    console.log('⚠  School sections not found — skipping subject section rules');
+    return;
+  }
+
+  // Rules to seed: [subjectName, sectionCode, includeInAggregate, isPenaltyTrigger]
+  const rules: Array<[string, string, boolean, boolean]> = [
+    // Religious Education excluded from aggregate in both sections
+    ['Religious Education', 'LOWER', false, false],
+    ['Religious Education', 'UPPER', false, false],
+    // Reading and Luganda excluded from aggregate in Lower Primary only
+    ['Reading',  'LOWER', false, false],
+    ['Luganda',  'LOWER', false, false],
+    // English and Mathematics trigger F9 penalty in both sections
+    ['English',     'LOWER', true, true],
+    ['English',     'UPPER', true, true],
+    ['Mathematics', 'LOWER', true, true],
+    ['Mathematics', 'UPPER', true, true],
+  ];
+
+  let seeded = 0;
+  for (const [subjectName, sectionCode, includeInAggregate, isPenaltyTrigger] of rules) {
+    const subject = await prisma.subject.findUnique({ where: { name: subjectName } });
+    if (!subject) continue; // subject not created via API yet — skip gracefully
+
+    const sectionId = sectionCode === 'LOWER' ? lower.id : upper.id;
+
+    await prisma.subjectSectionRule.upsert({
+      where:  { schoolSectionId_subjectId: { schoolSectionId: sectionId, subjectId: subject.id } },
+      update: { includeInAggregate, isPenaltyTrigger },
+      create: { schoolSectionId: sectionId, subjectId: subject.id, includeInAggregate, isPenaltyTrigger },
+    });
+    seeded++;
+  }
+
+  if (seeded > 0) {
+    console.log(`✓  Subject section rules seeded/updated (${seeded})`);
+  } else {
+    console.log('✓  Subject section rules: no matching subjects found yet — run after subjects are created via API');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 10. HOUSES
 // ─────────────────────────────────────────────────────────────────────────────
 async function seedHouses() {
   const defaults = [
@@ -450,6 +499,7 @@ async function main() {
   const subGroups = await seedClassHierarchy();
   await seedAcademicStructure(subGroups);
   await seedHouses();
+  await seedSubjectSectionRules();
 
   console.log('─────────────────────────────────────────────────────');
   console.log('  Seed complete.\n');

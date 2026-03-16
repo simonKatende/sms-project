@@ -20,6 +20,7 @@ import { classGroupRouter, classSubGroupRouter, classHierarchyRouter }
   from './routes/classHierarchyRoutes.js';
 import userManagementRoutes from './routes/userManagementRoutes.js';
 import { subjectRouter, classSubjectAssignmentRouter } from './routes/subjectRoutes.js';
+import { subjectSectionRulesRouter, gradingScaleRouter } from './routes/gradingConfigRoutes.js';
 
 const app = express();
 
@@ -50,6 +51,8 @@ app.use('/api/v1/admin/class-hierarchy', classHierarchyRouter);
 app.use('/api/v1/admin/users',                    userManagementRoutes);
 app.use('/api/v1/admin/subjects',                 subjectRouter);
 app.use('/api/v1/admin/class-subject-assignments', classSubjectAssignmentRouter);
+app.use('/api/v1/admin/subject-section-rules',    subjectSectionRulesRouter);
+app.use('/api/v1/admin/grading-scale',            gradingScaleRouter);
 
 // ── Health check ─────────────────────────────────────────────
 app.get('/health', (_req, res) => {
