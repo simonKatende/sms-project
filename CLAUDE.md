@@ -150,7 +150,11 @@ NO bank details. NO multiple copies.
 - NOT hardcoded
 - Dropdown on pupil registration form (populated from GET /api/v1/admin/houses/active)
 - pupils.houseId FK → houses.id (nullable)
-- Default houses seeded: Yellow (#F59E0B), Red (#EF4444), Blue (#3B82F6), Green (#10B981)
+- Default houses seeded (animal names with corresponding colours):
+  Lion     → Yellow  #F59E0B
+  Leopard  → Red     #EF4444
+  Cheetah  → Blue    #3B82F6
+  Tiger    → Green   #10B981
 
 ### Institution Profile (AAN-002) ✅ COMPLETE
 Configured in system settings → school_settings table
@@ -253,6 +257,37 @@ Never log passwords, secrets, or API keys.
 
 ### 7. One thing at a time
 Complete one task fully (code + tests + commit) before starting the next.
+
+### 8. Sprint Prompt Response Structure — MANDATORY
+For every sprint prompt, structure the response in three parts:
+
+PART 1 — TODO LIST (at the start, before any code is written)
+Read the prompt, then create your own checkbox todo list of every task you
+plan to complete. This is your execution plan — derive it from the prompt,
+do not wait to be given the list. Example:
+  Update Todos
+  * Create HouseService.js + HouseController.js + houseRoutes.js
+  * Register house routes in app.js
+  * Write HouseService unit tests
+  * Add HousesTab to AdminPage.jsx
+
+PART 2 — PROGRESSIVE STRIKE-THROUGH (during execution)
+As each task is completed, strike it through in the todo list. Example:
+  * ~~Create HouseService.js + HouseController.js + houseRoutes.js~~
+  * ~~Register house routes in app.js~~
+  * Write HouseService unit tests
+  * Add HousesTab to AdminPage.jsx
+
+PART 3 — SUMMARY (at the end, after all tasks are complete)
+Provide a structured summary with these sections:
+  - Backend: bullet list of every backend file created/changed + what it does
+  - Frontend: bullet list of every frontend file created/changed + what it does
+  - Database: migrations run, schema changes made
+  - Tests: number of tests written, confirmation all pass
+  - Any important notes (e.g. business rules applied, decisions made, watch-outs)
+
+Never skip the summary. Never skip the todo list. This structure is required
+for every prompt regardless of how small the task is.
 
 ---
 
